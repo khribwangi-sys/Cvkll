@@ -1,0 +1,99 @@
+-- Remote Scanner (Copy All) by Manus AI
+-- This script scans for all RemoteEvents and RemoteFunctions in the game
+-- and copies their invocation code to your clipboard in a single formatted string.
+-- Just run the script, and the codes will be in your clipboard!
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+
+-- Function to get the full path of an instance
+local function GetFullPathOfAnInstance(instance)
+    if not instance then return "nil" end
+    local name = instance.Name
+    local head = (#name > 0 and "." .. name) or "[" .. HttpService:JSONEncode(name) .. "]"
+
+    if not instance.Parent and instance ~= game then
+        return head .. " --[[ PARENTED TO NIL OR DESTROYED ]]"
+    end
+
+    if instance == game then
+        return "game"
+    elseif instance == workspace then
+        return "workspace"
+    else
+        local success, result = pcall(game.GetService, game, instance.ClassName)
+        if success and result then
+            head = ":GetService(" .. HttpService:JSONEncode(instance.ClassName) .. ")"
+        elseif instance == LocalPlayer then
+            head = ".LocalPlayer"
+        else
+            -- Handle names with special characters or starting with numbers
+            local safeName = name:gsub("[" .. string.gsub("\%^%$().[]*+-?{}", ".", "%%%0") .. "]", "%%")
+            if string.match(name, "^%d") or string.match(name, "[^%w_]") then
+                head = "[" .. HttpService:JSONEncode(name) .. "]"
+            else
+                head = "." .. name
+            end
+        end
+    end
+    return GetFullPathOfAnInstance(instance.Parent) .. head
+end
+
+local remoteCodes = {}
+local count = 1
+
+-- Scan for remotes and generate their invocation code
+for _, v in pairs(game:GetDescendants()) do
+    if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+        local remotePath = GetFullPathOfAnInstance(v)
+        local invocationCode
+
+        if v:IsA("RemoteEvent") then
+            invocationCode = remotePath .. ":FireServer()"
+        elseif v:IsA("RemoteFunction") then
+            invocationCode = remotePath .. ":InvokeServer()"
+        end
+        
+        table.insert(remoteCodes, string.format("%d.\n%s\n", count, invocationCode))
+        count = count + 1
+    end
+end
+
+-- Combine all codes into a single string
+local finalOutput = table.concat(remoteCodes, "\n")
+
+-- Copy to clipboard
+if setclipboard then
+    setclipboard(finalOutput)
+    print("Remote invocation codes copied to clipboard!")
+    print("Total remotes found: " .. (#remoteCodes))
+else
+    warn("setclipboard() is not available. Please copy the following manually:\n" .. finalOutput)
+end
+
+-- Optional: Display a temporary message in-game (for mobile users without console access)
+local function showTemporaryMessage(message, duration)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ClipboardMessageGUI"
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0, 300, 0, 50)
+    textLabel.Position = UDim2.new(0.5, -150, 0.9, -25)
+    textLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.Text = message
+    textLabel.Font = Enum.Font.SourceSansBold
+    textLabel.TextSize = 18
+    textLabel.ZIndex = 10
+    textLabel.Parent = gui
+
+    game:GetService("Debris"):AddItem(gui, duration)
+end
+
+if setclipboard then
+    showTemporaryMessage("Copied " .. (#remoteCodes) .. " remote codes to clipboard!", 5)
+else
+    showTemporaryMessage("setclipboard() not found. Check console for output.", 5)
+end
