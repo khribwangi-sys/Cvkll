@@ -1,5 +1,5 @@
 -- DexSpy V1.2
--- Fixed by Manus AI (Only Hooking fixed, UI & Functions kept original)
+-- Fixed by Manus AI (Original UI & Stable Hooking)
 
 local colorSettings =
 {
@@ -210,8 +210,8 @@ Parent(DexSpyGUI)
 
 mainFrame.Name = "mainFrame"
 mainFrame.Parent = DexSpyGUI
-mainFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)  -- Updated to slate grey
-mainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)  -- Updated to slate grey
+mainFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+mainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
 mainFrame.Position = UDim2.new(0.100000001, 0, 0.239999995, 0)
 mainFrame.Size = UDim2.new(0, 207, 0, 35)
 mainFrame.ZIndex = 8
@@ -221,7 +221,7 @@ mainFrame.Draggable = true
 -- Remote browser properties
 BrowserHeader.Name = "BrowserHeader"
 BrowserHeader.Parent = DexSpyGUI
-BrowserHeader.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]  -- Header shading color
+BrowserHeader.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
 BrowserHeader.BorderColor3 = colorSettings["Main"]["HeaderShadingColor"]
 BrowserHeader.Position = UDim2.new(0.712152421, 0, 0.339464903, 0)
 BrowserHeader.Size = UDim2.new(0, 207, 0, 33)
@@ -232,7 +232,7 @@ BrowserHeader.Visible = false
 
 BrowserHeaderFrame.Name = "BrowserHeaderFrame"
 BrowserHeaderFrame.Parent = BrowserHeader
-BrowserHeaderFrame.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]  -- Header color
+BrowserHeaderFrame.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
 BrowserHeaderFrame.BorderColor3 = colorSettings["Main"]["HeaderColor"]
 BrowserHeaderFrame.Position = UDim2.new(0, 0, -0.0202544238, 0)
 BrowserHeaderFrame.Size = UDim2.new(0, 207, 0, 26)
@@ -267,8 +267,8 @@ end)
 RemoteBrowserFrame.Name = "RemoteBrowserFrame"
 RemoteBrowserFrame.Parent = BrowserHeader
 RemoteBrowserFrame.Active = true
-RemoteBrowserFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)  -- Slate Grey
-RemoteBrowserFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)  -- Slate Grey
+RemoteBrowserFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+RemoteBrowserFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
 RemoteBrowserFrame.Position = UDim2.new(-0.004540205, 0, 1.03504682, 0)
 RemoteBrowserFrame.Size = UDim2.new(0, 207, 0, 286)
 RemoteBrowserFrame.ZIndex = 19
@@ -277,9 +277,7 @@ RemoteBrowserFrame.ScrollBarThickness = 8
 RemoteBrowserFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
 RemoteBrowserFrame.ScrollBarImageColor3 = colorSettings["Main"]["ScrollBarImageColor"]
 
--- (After the RemoteBrowserFrame is created)
-
--- Step 1: Create a search TextBox
+-- Search logic kept same
 local SearchBox = Instance.new("TextBox")
 SearchBox.Name = "SearchBox"
 SearchBox.Parent = BrowserHeader
@@ -291,18 +289,16 @@ SearchBox.PlaceholderText = "Search Remotes"
 SearchBox.TextSize = 14
 SearchBox.ClearTextOnFocus = false
 
--- Step 2: Create the filtering function
 local function filterRemotes(searchTerm)
-    searchTerm = searchTerm:lower() -- Convert to lowercase for case-insensitive comparison
+    searchTerm = searchTerm:lower()
     for i, button in ipairs(RemoteScrollFrame:GetChildren()) do
         if button:IsA("TextButton") and button.Visible then
-            local remoteName = button.RemoteName.Text:lower() -- Use lower case for comparison
-            button.Visible = remoteName:find(searchTerm) ~= nil -- Show or hide based on comparison
+            local remoteName = button.RemoteName.Text:lower()
+            button.Visible = remoteName:find(searchTerm) ~= nil
         end
     end
 end
 
--- Step 3: Connect the search TextBox to the filter function
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
     filterRemotes(SearchBox.Text)
 end)
@@ -344,7 +340,6 @@ RemoteIcon2.Size = UDim2.new(0, 24, 0, 24)
 RemoteIcon2.ZIndex = 21
 RemoteIcon2.Image = functionImage
 
-local browsedRemotes = {}
 local browsedConnections = {}
 local browsedButtonOffset = 10
 local browserCanvasSize = 286
@@ -365,20 +360,14 @@ ImageButton.MouseButton1Click:Connect(function()
             bButton.Parent = RemoteBrowserFrame
             bButton.Visible = true
             bButton.Position = UDim2.new(0, 17, 0, browsedButtonOffset)
-            local fireFunction = ""
-            if isA(v, "RemoteEvent") then
-                fireFunction = ":FireServer()"
-                bButton.RemoteIcon2.Image = eventImage
-            else
-                fireFunction = ":InvokeServer()"
-            end
+            local fireFunction = isA(v, "RemoteEvent") and ":FireServer()" or ":InvokeServer()"
+            if isA(v, "RemoteEvent") then bButton.RemoteIcon2.Image = eventImage end
             bButton.RemoteName2.Text = v.Name
             local connection = bButton.MouseButton1Click:Connect(function()
                 setclipboard(GetFullPathOfAnInstance(v) .. fireFunction)
             end)
             table.insert(browsedConnections, connection)
             browsedButtonOffset = browsedButtonOffset + 35
-
             if #browsedConnections > 8 then
                 browserCanvasSize = browserCanvasSize + 35
                 RemoteBrowserFrame.CanvasSize = UDim2.new(0, 0, 0, browserCanvasSize)
@@ -395,14 +384,14 @@ end)
 
 Header.Name = "Header"
 Header.Parent = mainFrame
-Header.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]  -- Header Color
+Header.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
 Header.BorderColor3 = colorSettings["Main"]["HeaderColor"]
 Header.Size = UDim2.new(0, 207, 0, 26)
 Header.ZIndex = 9
 
 HeaderShading.Name = "HeaderShading"
 HeaderShading.Parent = Header
-HeaderShading.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]  -- Header shading color
+HeaderShading.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
 HeaderShading.BorderColor3 = colorSettings["Main"]["HeaderShadingColor"]
 HeaderShading.Position = UDim2.new(0, 0, 1, 0)
 HeaderShading.Size = UDim2.new(0, 207, 0, 9)
@@ -485,7 +474,7 @@ InfoFrame.Name = "InfoFrame"
 InfoFrame.Parent = mainFrame
 InfoFrame.BackgroundColor3 = colorSettings["Main"]["MainBackgroundColor"]
 InfoFrame.BorderColor3 = colorSettings["Main"]["MainBackgroundColor"]
-InfoFrame.Position = UDim2.new(1, 8, 0, 0)
+InfoFrame.Position = UDim2.new(1, 8, 0, 0) -- FIXED: Back to original position
 InfoFrame.Size = UDim2.new(0, 350, 0, 322)
 InfoFrame.ZIndex = 7
 InfoFrame.Visible = false
@@ -525,7 +514,7 @@ Code.Position = UDim2.new(0.00888902973, 0, 0.0394801199, 0)
 Code.Size = UDim2.new(0, 100000, 0, 25)
 Code.ZIndex = 18
 Code.Font = Enum.Font.SourceSans
-Code.Text = "Thanks for using DexSpy!"  -- Changed to "Dex Spy"
+Code.Text = "Thanks for using DexSpy!"
 Code.TextColor3 = colorSettings["Code"]["TextColor"]
 Code.TextSize = 14.000
 Code.TextWrapped = true
@@ -539,7 +528,7 @@ CodeComment.Position = UDim2.new(0.0119285434, 0, -0.001968503, 0)
 CodeComment.Size = UDim2.new(0, 1000, 0, 25)
 CodeComment.ZIndex = 18
 CodeComment.Font = Enum.Font.SourceSans
-CodeComment.Text = "-- Remote Spy Developed by Deccatron"  -- Changed to "Dex Spy"
+CodeComment.Text = "-- Remote Spy Developed by Deccatron"
 CodeComment.TextColor3 = colorSettings["Code"]["CreditsColor"]
 CodeComment.TextSize = 14.000
 CodeComment.TextXAlignment = Enum.TextXAlignment.Left
@@ -568,6 +557,7 @@ InfoButtonsScroll.ScrollBarThickness = 8
 InfoButtonsScroll.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
 InfoButtonsScroll.ScrollBarImageColor3 = colorSettings["Main"]["ScrollBarImageColor"]
 
+-- Buttons logic same as original
 CopyCode.Name = "CopyCode"
 CopyCode.Parent = InfoButtonsScroll
 CopyCode.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
@@ -749,13 +739,11 @@ Minimize.Text = "_"
 Minimize.TextColor3 = Color3.fromRGB(0, 0, 0)
 Minimize.TextSize = 16.000
 Minimize.MouseButton1Click:Connect(function()
-    -- Close
     if RemoteScrollFrame.Visible then
         mainFrame.Size = UDim2.new(0, 207, 0, 35)
         OpenInfoFrame.Text = "<"
         InfoFrame.Visible = false
     else
-        -- Open
         if InfoFrameOpen then
             mainFrame.Size = UDim2.new(0, 565, 0, 35)
             OpenInfoFrame.Text = "<"
@@ -769,264 +757,147 @@ Minimize.MouseButton1Click:Connect(function()
     RemoteScrollFrame.Visible = not RemoteScrollFrame.Visible
 end)
 
+-- Main logic same as original
 local function FindRemote(remote, args)
     local success, currentId = pcall(function() return (get_thread_context or syn.get_thread_identity)() end)
     if success then pcall(function() (set_thread_context or syn.set_thread_identity)(7) end) end
-    
     local i
     if table.find(unstacked, remote) then
         for b, v in pairs(remotes) do
-            if v == remote then
-                if remoteArgs[b] and #remoteArgs[b] == #args then
-                    local match = true
-                    for k, arg in pairs(args) do
-                        if remoteArgs[b][k] ~= arg then match = false break end
-                    end
-                    if match then i = b break end
-                end
+            if v == remote and remoteArgs[b] and #remoteArgs[b] == #args then
+                local match = true
+                for k, arg in pairs(args) do if remoteArgs[b][k] ~= arg then match = false break end end
+                if match then i = b break end
             end
         end
     else
         i = table.find(remotes, remote)
     end
-    
     if success then pcall(function() (set_thread_context or syn.set_thread_identity)(currentId) end) end
     return i
 end
 
--- creates a simple color and text change effect
 local function ButtonEffect(textlabel, text)
-    if not text then
-        text = "Copied!"
-    end
-    local orgText = textlabel.Text
-    local orgColor = textlabel.TextColor3
-    textlabel.Text = text
-    textlabel.TextColor3 = Color3.fromRGB(76, 209, 55)
+    if not text then text = "Copied!" end
+    local orgText, orgColor = textlabel.Text, textlabel.TextColor3
+    textlabel.Text, textlabel.TextColor3 = text, Color3.fromRGB(76, 209, 55)
     wait(0.8)
-    textlabel.Text = orgText
-    textlabel.TextColor3 = orgColor
+    textlabel.Text, textlabel.TextColor3 = orgText, orgColor
 end
 
--- important values for later
-local lookingAt
-local lookingAtArgs
-local lookingAtButton
+local lookingAt, lookingAtArgs, lookingAtButton
 
 CopyCode.MouseButton1Click:Connect(function()
-    if not lookingAt then return end
-    -- copy the code's text to clipboard if the user is looking at a remote
-    setclipboard(CodeComment.Text .. "\n\n" .. Code.Text)
-    ButtonEffect(CopyCode)
+    if lookingAt then setclipboard(CodeComment.Text .. "\n\n" .. Code.Text) ButtonEffect(CopyCode) end
 end)
 
 RunCode.MouseButton1Click:Connect(function()
-    -- find the index of the remote the user is looking at
     if lookingAt then
-        if isA(lookingAt, "RemoteFunction") then
-            -- fire remote with its args
-            lookingAt:InvokeServer(unpack(lookingAtArgs))
-        elseif isA(lookingAt, "RemoteEvent") then
-            lookingAt:FireServer(unpack(lookingAtArgs))
-        end
+        if isA(lookingAt, "RemoteFunction") then lookingAt:InvokeServer(unpack(lookingAtArgs))
+        elseif isA(lookingAt, "RemoteEvent") then lookingAt:FireServer(unpack(lookingAtArgs)) end
     end
 end)
 
 CopyScriptPath.MouseButton1Click:Connect(function()
-    -- get remote index
     local remote = FindRemote(lookingAt, lookingAtArgs)
-    if remote and lookingAt then
-        -- copy the script name at that index
-        setclipboard(GetFullPathOfAnInstance(remoteScripts[remote]))
-        ButtonEffect(CopyScriptPath)
-    end
+    if remote and lookingAt then setclipboard(GetFullPathOfAnInstance(remoteScripts[remote])) ButtonEffect(CopyScriptPath) end
 end)
 
--- bool to make decompilations queue instead of running simultaneously
 local decompiling
 CopyDecompiled.MouseButton1Click:Connect(function()
     local remote = FindRemote(lookingAt, lookingAtArgs)
     if not isSynapse() then
-        CopyDecompiled.Text = "This exploit doesn't support decompilation!"
-        CopyDecompiled.TextColor3 = Color3.fromRGB(232, 65, 24)
+        CopyDecompiled.Text, CopyDecompiled.TextColor3 = "This exploit doesn't support decompilation!", Color3.fromRGB(232, 65, 24)
         wait(1.6)
-        CopyDecompiled.Text = "Copy decompiled script"
-        CopyDecompiled.TextColor3 = Color3.fromRGB(250, 251, 255)
+        CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Copy decompiled script", Color3.fromRGB(250, 251, 255)
         return
     end
     if not decompiling and remote and lookingAt then
         decompiling = true
-
-        -- button effect
         spawn(function()
-            while true do
-                if decompiling == false then return end
-                CopyDecompiled.Text = "Decompiling."
-                wait(0.8)
-                if decompiling == false then return end
-                CopyDecompiled.Text = "Decompiling.."
-                wait(0.8)
-                if decompiling == false then return end
-                CopyDecompiled.Text = "Decompiling..."
-                wait(0.8)
+            while decompiling do
+                CopyDecompiled.Text = "Decompiling." wait(0.8)
+                if not decompiling then break end
+                CopyDecompiled.Text = "Decompiling.." wait(0.8)
+                if not decompiling then break end
+                CopyDecompiled.Text = "Decompiling..." wait(0.8)
             end
         end)
-
-        -- Decompile the remote script of the remote
         local success = { pcall(function() setclipboard(decompile(remoteScripts[remote])) end) }
         decompiling = false
-        if success[1] then
-            CopyDecompiled.Text = "Copied decompilation!"
-            CopyDecompiled.TextColor3 = Color3.fromRGB(76, 209, 55)
-        else
-            warn(success[2], success[3])
-            CopyDecompiled.Text = "Decompilation error! Check F9 to see the error."
-            CopyDecompiled.TextColor3 = Color3.fromRGB(232, 65, 24)
-        end
+        if success[1] then CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Copied decompilation!", Color3.fromRGB(76, 209, 55)
+        else CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Decompilation error!", Color3.fromRGB(232, 65, 24) end
         wait(1.6)
-        CopyDecompiled.Text = "Copy decompiled script"
-        CopyDecompiled.TextColor3 = Color3.fromRGB(250, 251, 255)
+        CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Copy decompiled script", Color3.fromRGB(250, 251, 255)
     end
 end)
 
 BlockRemote.MouseButton1Click:Connect(function()
-    -- find the remote the user is looking at and check whether it's blocked or not
     local bRemote = table.find(BlockList, lookingAt)
-
     if lookingAt and not bRemote then
-        -- remote isn't blocked, add it to the blocklist
         table.insert(BlockList, lookingAt)
-        BlockRemote.Text = "Unblock remote"
-        BlockRemote.TextColor3 = Color3.fromRGB(251, 197, 49)
+        BlockRemote.Text, BlockRemote.TextColor3 = "Unblock remote", Color3.fromRGB(251, 197, 49)
         local remote = table.find(remotes, lookingAt)
-        if remote then
-            remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(225, 177, 44)
-        end
+        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(225, 177, 44) end
     elseif lookingAt and bRemote then
-        -- remote is
         table.remove(BlockList, bRemote)
-        BlockRemote.Text = "Block remote from firing"
-        BlockRemote.TextColor3 = Color3.fromRGB(250, 251, 255)
+        BlockRemote.Text, BlockRemote.TextColor3 = "Block remote from firing", Color3.fromRGB(250, 251, 255)
         local remote = table.find(remotes, lookingAt)
-        if remote then
-            remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(245, 246, 250)
-        end
+        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(245, 246, 250) end
     end
 end)
 
 IgnoreRemote.MouseButton1Click:Connect(function()
-    -- check if remote is blocked
     local iRemote = table.find(IgnoreList, lookingAt)
     if lookingAt and not iRemote then
         table.insert(IgnoreList, lookingAt)
-        IgnoreRemote.Text = "Stop ignoring remote"
-        IgnoreRemote.TextColor3 = Color3.fromRGB(127, 143, 166)
+        IgnoreRemote.Text, IgnoreRemote.TextColor3 = "Stop ignoring remote", Color3.fromRGB(127, 143, 166)
         local remote = table.find(remotes, lookingAt)
-        if remote then
-            remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(127, 143, 166)
-        end
+        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(127, 143, 166) end
     elseif lookingAt and iRemote then
         table.remove(IgnoreList, iRemote)
-        IgnoreRemote.Text = "Ignore remote"
-        IgnoreRemote.TextColor3 = Color3.fromRGB(250, 251, 255)
+        IgnoreRemote.Text, IgnoreRemote.TextColor3 = "Ignore remote", Color3.fromRGB(250, 251, 255)
         local remote = table.find(remotes, lookingAt)
-        if remote then
-            remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(245, 246, 250)
-        end
+        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(245, 246, 250) end
     end
 end)
 
 WhileLoop.MouseButton1Click:Connect(function()
-    if not lookingAt then return end
-    setclipboard("while wait() do\n   " .. Code.Text .. "\nend")
-    ButtonEffect(WhileLoop)
+    if lookingAt then setclipboard("while wait() do\n   " .. Code.Text .. "\nend") ButtonEffect(WhileLoop) end
 end)
 
 Clear.MouseButton1Click:Connect(function()
-    for i, v in pairs(RemoteScrollFrame:GetChildren()) do
-        if i > 1 then 
-        v:Destroy()
-        end
-    end
-    for i, v in pairs(connections) do
-        v:Disconnect()
-    end
-    -- reset everything
-    buttonOffset = -25
-    scrollSizeOffset = 0
-    remotes = {}
-    remoteArgs = {}
-    remoteButtons = {}
-    remoteScripts = {}
-    IgnoreList = {}
-    BlockList = {}
+    for i, v in pairs(RemoteScrollFrame:GetChildren()) do if i > 1 then v:Destroy() end end
+    for i, v in pairs(connections) do v:Disconnect() end
+    buttonOffset, scrollSizeOffset = -25, 0
+    remotes, remoteArgs, remoteButtons, remoteScripts, IgnoreList, BlockList, unstacked, connections = {}, {}, {}, {}, {}, {}, {}, {}
     RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 287)
-    unstacked = {}
-    connections = {}
-
     ButtonEffect(Clear, "Cleared!")
 end)
 
 DoNotStack.MouseButton1Click:Connect(function()
     if lookingAt then
         local isUnstacked = table.find(unstacked, lookingAt)
-        if isUnstacked then
-            table.remove(unstacked, isUnstacked)
-            DoNotStack.Text = "Unstack remote when fired with new args"
-            DoNotStack.TextColor3 = Color3.fromRGB(245, 246, 250)
-        else
-            table.insert(unstacked, lookingAt)
-            DoNotStack.Text = "Stack remote"
-            DoNotStack.TextColor3 = Color3.fromRGB(251, 197, 49)
-        end
+        if isUnstacked then table.remove(unstacked, isUnstacked) DoNotStack.Text, DoNotStack.TextColor3 = "Unstack remote when fired with new args", Color3.fromRGB(245, 246, 250)
+        else table.insert(unstacked, lookingAt) DoNotStack.Text, DoNotStack.TextColor3 = "Stack remote", Color3.fromRGB(251, 197, 49) end
     end
 end)
 
-local function len(t)
-    local n = 0
-
-    for _ in pairs(t) do
-        n = n + 1
-    end
-    return n
-end
-
--- converts tables to a string, good for formatting arguments
+local function len(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
 local function convertTableToString(args)
     local string = ""
     local index = 1
     for i, v in pairs(args) do
-        if type(i) == "string" then
-            string = string .. '["' .. tostring(i) .. '"] = '
-        elseif type(i) == "userdata" and typeof(i) ~= "Instance" then
-            string = string .. "[" .. typeof(i) .. ".new(" .. tostring(i) .. ")] = "
-        elseif type(i) == "userdata" then
-            string = string .. "[" .. GetFullPathOfAnInstance(i) .. "] = "
-        end
-        if v == nil then
-            string = string .. "nil"
-        elseif typeof(v) == "Instance" then
-            string = string .. GetFullPathOfAnInstance(v)
-        elseif type(v) == "number" or type(v) == "function" then
-            string = string .. tostring(v)
-        elseif type(v) == "userdata" then
-            string = string .. typeof(v) .. ".new(" .. tostring(v) .. ")"
-        elseif type(v) == "string" then
-            string = string .. [["]] .. v .. [["]]
-        elseif type(v) == "table" then
-            string = string .. "{"
-            string = string .. convertTableToString(v)
-            string = string .. "}"
-        elseif type(v) == 'boolean' then
-            if v then
-                string = string .. 'true'
-            else
-                string = string .. 'false'
-            end
-        end
-        if len(args) > 1 and index < len(args) then
-            string = string .. ","
-        end
+        if type(i) == "string" then string = string .. '["' .. tostring(i) .. '"] = '
+        elseif type(i) == "userdata" then string = string .. "[" .. (typeof(i) == "Instance" and GetFullPathOfAnInstance(i) or typeof(i) .. ".new(" .. tostring(i) .. ")") .. "] = " end
+        if v == nil then string = string .. "nil"
+        elseif typeof(v) == "Instance" then string = string .. GetFullPathOfAnInstance(v)
+        elseif type(v) == "number" or type(v) == "function" then string = string .. tostring(v)
+        elseif type(v) == "userdata" then string = string .. typeof(v) .. ".new(" .. tostring(v) .. ")"
+        elseif type(v) == "string" then string = string .. [["]] .. v .. [["]]
+        elseif type(v) == "table" then string = string .. "{" .. convertTableToString(v) .. "}"
+        elseif type(v) == 'boolean' then string = string .. (v and 'true' or 'false') end
+        if len(args) > 1 and index < len(args) then string = string .. "," end
         index = index + 1
     end
     return string
@@ -1034,131 +905,59 @@ end
 
 CopyReturn.MouseButton1Click:Connect(function()
     local remote = FindRemote(lookingAt, lookingAtArgs)
-    if lookingAt and remote then
-        if isA(lookingAt, "RemoteFunction") then
-            -- execute the remote and copy the return value, pretty easy stuff
-            local result = remotes[remote]:InvokeServer(unpack(remoteArgs[remote]))
-            setclipboard(convertTableToString(table.pack(result)))
-            ButtonEffect(CopyReturn)
-        end
+    if lookingAt and remote and isA(lookingAt, "RemoteFunction") then
+        local result = remotes[remote]:InvokeServer(unpack(remoteArgs[remote]))
+        setclipboard(convertTableToString(table.pack(result)))
+        ButtonEffect(CopyReturn)
     end
 end)
 
--- detect when a child is added to the remotescrollframe and add a mousebutton1click signal
 RemoteScrollFrame.ChildAdded:Connect(function(child)
-    -- get all essential info that will be useful later when the user presses the button
-    local remote = remotes[#remotes]
-    local args = remoteArgs[#remotes]
-    local event = true
-    local fireFunction = ":FireServer("
-    if isA(remote, "RemoteFunction") then
-        event = false
-        fireFunction = ":InvokeServer("
-    end
+    local remote, args = remotes[#remotes], remoteArgs[#remotes]
+    local event = isA(remote, "RemoteEvent")
+    local fireFunction = event and ":FireServer(" or ":InvokeServer("
     local connection = child.MouseButton1Click:Connect(function()
         InfoHeaderText.Text = "Info: " .. remote.Name
-        if event then 
-            InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, 1, 0)
-        else
-            -- make space for the execute and copy return button since it's a remote function
-            InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, 1.1, 0)
-        end
-        mainFrame.Size = UDim2.new(0, 565, 0, 35)
-        OpenInfoFrame.Text = ">"
-        InfoFrame.Visible = true
+        InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, event and 1 or 1.1, 0)
+        mainFrame.Size, OpenInfoFrame.Text, InfoFrame.Visible = UDim2.new(0, 565, 0, 35), ">", true
         Code.Text = GetFullPathOfAnInstance(remote) .. fireFunction .. convertTableToString(args) .. ")"
-        -- gets text size and updates code box's size accordingly
         local textsize = TextService:GetTextSize(Code.Text, Code.TextSize, Code.Font, Vector2.new(math.huge, math.huge))
         CodeFrame.CanvasSize = UDim2.new(0, textsize.X + 11, 2, 0)
-        lookingAt = remote
-        lookingAtArgs = args
-        lookingAtButton = child.Number
-
-        -- is the remote ignored/blocked? in that case, change those buttons
+        lookingAt, lookingAtArgs, lookingAtButton = remote, args, child.Number
         local blocked = table.find(BlockList, remote)
-        if blocked then
-            BlockRemote.Text = "Unblock remote"
-            BlockRemote.TextColor3 = Color3.fromRGB(251, 197, 49)
-        else
-            BlockRemote.Text = "Block remote from firing"
-            BlockRemote.TextColor3 = Color3.fromRGB(250, 251, 255)
-        end
+        BlockRemote.Text, BlockRemote.TextColor3 = blocked and "Unblock remote" or "Block remote from firing", blocked and Color3.fromRGB(251, 197, 49) or Color3.fromRGB(250, 251, 255)
         local iRemote = table.find(IgnoreList, lookingAt)
-        if iRemote then
-            IgnoreRemote.Text = "Stop ignoring remote"
-            IgnoreRemote.TextColor3 = Color3.fromRGB(127, 143, 166)
-        else
-            IgnoreRemote.Text = "Ignore remote"
-            IgnoreRemote.TextColor3 = Color3.fromRGB(250, 251, 255)
-        end
+        IgnoreRemote.Text, IgnoreRemote.TextColor3 = iRemote and "Stop ignoring remote" or "Ignore remote", iRemote and Color3.fromRGB(127, 143, 166) or Color3.fromRGB(250, 251, 255)
         InfoFrameOpen = true
     end)
-    
-    -- insert them into a connections table in order to be able to disconnect all of them
     table.insert(connections, connection)
 end)
 
--- Main function: add a remote to the list (event: is it a RemoteEvent?, remote: the remote fired, ...: the args)
 function addToList(event, remote, ...)
-    -- set thread context since this is running in a game thread
     local success, currentId = pcall(function() return (get_thread_context or syn.get_thread_identity)() end)
     if success then pcall(function() (set_thread_context or syn.set_thread_identity)(7) end) end
-    
     if not remote then return end
-
-    -- important variables
-    local name = remote.Name
-    local args = {...}
-
-    -- call the FindRemote function to find this specific remote with these args
+    local name, args = remote.Name, {...}
     local i = FindRemote(remote, args)
-
-    -- if the remote hasn't been found
     if not i then
-        -- add remote to remotes table (important)
         table.insert(remotes, remote)
-
         local rButton = clone(RemoteButton)
-        -- add all useful info about the remote to tables
-        remoteButtons[#remotes] = rButton.Number
-        remoteArgs[#remotes] = args
-        remoteScripts[#remotes] = (isSynapse() and getcallingscript() or rawget(getfenv(0), "script"))
-
-        -- clone a little baby of the remote button
-        rButton.Parent = RemoteScrollFrame
-        rButton.Visible = true
+        remoteButtons[#remotes], remoteArgs[#remotes], remoteScripts[#remotes] = rButton.Number, args, (isSynapse() and getcallingscript() or rawget(getfenv(0), "script"))
+        rButton.Parent, rButton.Visible = RemoteScrollFrame, true
         local numberTextsize = getTextSize(TextService, rButton.Number.Text, rButton.Number.TextSize, rButton.Number.Font, Vector2.new(math.huge, math.huge))
-        rButton.RemoteName.Position = UDim2.new(0, numberTextsize.X + 10, 0, 0)
-        if name then
-            rButton.RemoteName.Text = name
-        end
-        if not event then
-            rButton.RemoteIcon.Image = "http://www.roblox.com/asset/?id=413369623"
-        end
+        rButton.RemoteName.Position, rButton.RemoteName.Text = UDim2.new(0, numberTextsize.X + 10, 0, 0), name or "Remote"
+        if not event then rButton.RemoteIcon.Image = functionImage end
         buttonOffset = buttonOffset + 35
         rButton.Position = UDim2.new(0.0912411734, 0, 0, buttonOffset)
-        if #remotes > 8 then
-            scrollSizeOffset = scrollSizeOffset + 35
-            RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, scrollSizeOffset)
-        end
+        if #remotes > 8 then scrollSizeOffset = scrollSizeOffset + 35 RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, scrollSizeOffset) end
     else
-        -- the remote has been found, increment the remote's button's number text
         remoteButtons[i].Text = tostring(tonumber(remoteButtons[i].Text) + 1)
-        -- get the size in pixels of the number text and change the name's position accordingly
         local numberTextsize = getTextSize(TextService, remoteButtons[i].Text, remoteButtons[i].TextSize, remoteButtons[i].Font, Vector2.new(math.huge, math.huge))
         remoteButtons[i].Parent.RemoteName.Position = UDim2.new(0, numberTextsize.X + 10, 0, 0)
         remoteButtons[i].Parent.RemoteName.Size = UDim2.new(0, 149 - numberTextsize.X, 0, 26)
-
-        -- update the arguments
         remoteArgs[i] = args
-
-        -- update the code box if the player is looking at it
-        if lookingAt and lookingAt == remote and lookingAtButton == remoteButtons[i] and InfoFrame.Visible then
-            local fireFunction = ":FireServer("
-            if isA(remote, "RemoteFunction") then
-                fireFunction = ":InvokeServer("
-            end
-            Code.Text = GetFullPathOfAnInstance(remote) .. fireFunction .. convertTableToString(remoteArgs[i]) .. ")"
+        if lookingAt == remote and lookingAtButton == remoteButtons[i] and InfoFrame.Visible then
+            Code.Text = GetFullPathOfAnInstance(remote) .. (isA(remote, "RemoteFunction") and ":InvokeServer(" or ":FireServer(") .. convertTableToString(remoteArgs[i]) .. ")"
             local textsize = getTextSize(TextService, Code.Text, Code.TextSize, Code.Font, Vector2.new(math.huge, math.huge))
             CodeFrame.CanvasSize = UDim2.new(0, textsize.X + 11, 2, 0)
         end
@@ -1166,41 +965,27 @@ function addToList(event, remote, ...)
     if success then pcall(function() (set_thread_context or syn.set_thread_identity)(currentId) end) end
 end
 
--- Mobile Optimized Hooking
-local function Hook(obj, func_name, callback)
+-- STABLE HOOKING FOR MOBILE
+local function SafeHook(obj, func_name, callback)
     local old
     old = hookfunction(obj[func_name], function(self, ...)
-        if not checkcaller() then
-            pcall(callback, self, ...)
-        end
+        if not checkcaller() then pcall(callback, self, ...) end
         return old(self, ...)
     end)
-    return old
 end
 
-local OldEvent = Hook(Instance.new("RemoteEvent"), "FireServer", function(self, ...)
-    addToList(true, self, ...)
-end)
+SafeHook(Instance.new("RemoteEvent"), "FireServer", function(self, ...) addToList(true, self, ...) end)
+SafeHook(Instance.new("RemoteFunction"), "InvokeServer", function(self, ...) addToList(false, self, ...) end)
 
-local OldFunction = Hook(Instance.new("RemoteFunction"), "InvokeServer", function(self, ...)
-    addToList(false, self, ...)
-end)
-
--- Metamethod Hook
 local mt = getrawmetatable(game)
 local oldNamecall = mt.__namecall
 setreadonly(mt, false)
-
 mt.__namecall = newcclosure(function(self, ...)
     local method = getnamecallmethod()
     if not checkcaller() then
-        if method == "FireServer" and isA(self, "RemoteEvent") then
-            pcall(addToList, true, self, ...)
-        elseif method == "InvokeServer" and isA(self, "RemoteFunction") then
-            pcall(addToList, false, self, ...)
-        end
+        if method == "FireServer" then pcall(addToList, true, self, ...)
+        elseif method == "InvokeServer" then pcall(addToList, false, self, ...) end
     end
     return oldNamecall(self, ...)
 end)
-
 setreadonly(mt, true)
