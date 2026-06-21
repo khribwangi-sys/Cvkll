@@ -8,7 +8,6 @@ local Settings = {
 local RunService       = game:GetService("RunService")
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TweenService     = game:GetService("TweenService")
 local LocalPlayer      = Players.LocalPlayer
 local Camera           = game.Workspace.CurrentCamera
 
@@ -257,8 +256,8 @@ local function CreateFullESP(player)
     end
 
     local function HideAll()
-        for _, v in pairs(esp) do pcall(function() v.Visible = false end) end
-        for i = 1, #limbs do pcall(function() limbs[i].Visible = false end) end
+        for _, v in pairs(esp)   do pcall(function() v.Visible = false end) end
+        for i = 1, #limbs       do pcall(function() limbs[i].Visible = false end) end
     end
 
     local function Update()
@@ -375,7 +374,7 @@ end)
 Players.PlayerRemoving:Connect(function(p) DestroyESP(p) end)
 
 -- =====================================================================
---  COLOUR PALETTE  (blue theme)
+--  COLOUR PALETTE
 -- =====================================================================
 local B_BLUE    = Color3.fromRGB(0,   150, 255)
 local B_BRIGHT  = Color3.fromRGB(80,  200, 255)
@@ -393,11 +392,11 @@ local B_BG      = Color3.fromRGB(2,   5,   18)
 --  SCREENGUI
 -- =====================================================================
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
-ScreenGui.Name         = "呵呵"
+ScreenGui.Name         = "AX"
 ScreenGui.ResetOnSpawn = false
 
 -- =====================================================================
---  MAIN FRAME  (fully transparent glass look)
+--  MAIN FRAME
 -- =====================================================================
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Size                   = UDim2.new(0, 440, 0, 340)
@@ -422,10 +421,10 @@ BgGrad.Color = ColorSequence.new({
 BgGrad.Rotation = 135
 
 -- =====================================================================
---  HEADER
+--  HEADER  (no logo, no MENU text)
 -- =====================================================================
 local Header = Instance.new("Frame", MainFrame)
-Header.Size                   = UDim2.new(1, 0, 0, 42)
+Header.Size                   = UDim2.new(1, 0, 0, 38)
 Header.BackgroundColor3       = Color3.fromRGB(4, 10, 30)
 Header.BackgroundTransparency = 0.50
 Header.ZIndex                 = 3
@@ -439,74 +438,43 @@ HeaderLine.BackgroundTransparency = 0.2
 HeaderLine.ZIndex                 = 4
 Instance.new("UICorner", HeaderLine).CornerRadius = UDim.new(1, 0)
 
-local LogoCircle = Instance.new("Frame", Header)
-LogoCircle.Size             = UDim2.new(0, 28, 0, 28)
-LogoCircle.Position         = UDim2.new(0, 9, 0.5, -14)
-LogoCircle.BackgroundColor3 = B_DARK
-LogoCircle.ZIndex           = 5
-Instance.new("UICorner", LogoCircle).CornerRadius = UDim.new(1, 0)
-local LogoGrad = Instance.new("UIGradient", LogoCircle)
-LogoGrad.Color    = ColorSequence.new({ ColorSequenceKeypoint.new(0, B_BLUE), ColorSequenceKeypoint.new(1, B_DARK) })
-LogoGrad.Rotation = 45
+local VerLabel = Instance.new("TextLabel", Header)
+VerLabel.Text                   = "v4.1"
+VerLabel.Size                   = UDim2.new(0, 60, 1, 0)
+VerLabel.Position               = UDim2.new(0, 10, 0, 0)
+VerLabel.TextColor3             = B_MUTED
+VerLabel.Font                   = Enum.Font.GothamBold
+VerLabel.TextSize               = 10
+VerLabel.BackgroundTransparency = 1
+VerLabel.TextXAlignment         = Enum.TextXAlignment.Left
+VerLabel.TextYAlignment         = Enum.TextYAlignment.Center
+VerLabel.ZIndex                 = 4
 
-local LogoLabel = Instance.new("TextLabel", LogoCircle)
-LogoLabel.Size                   = UDim2.new(1, 0, 1, 0)
-LogoLabel.BackgroundTransparency = 1
-LogoLabel.Text                   = "✦"
-LogoLabel.Font                   = Enum.Font.GothamBold
-LogoLabel.TextSize               = 13
-LogoLabel.TextColor3             = Color3.fromRGB(255, 255, 255)
-LogoLabel.ZIndex                 = 6
-
-local Title = Instance.new("TextLabel", Header)
-Title.Text                   = "⟨ MENU ⟩"
-Title.Size                   = UDim2.new(0, 180, 1, 0)
-Title.Position               = UDim2.new(0, 46, 0, 0)
-Title.TextColor3             = B_TEXT
-Title.Font                   = Enum.Font.GothamBold
-Title.TextSize               = 14
-Title.BackgroundTransparency = 1
-Title.TextXAlignment         = Enum.TextXAlignment.Left
-Title.TextYAlignment         = Enum.TextYAlignment.Center
-Title.ZIndex                 = 4
-
-local SubTitle = Instance.new("TextLabel", Header)
-SubTitle.Text                   = "v4.0"
-SubTitle.Size                   = UDim2.new(0, 40, 1, 0)
-SubTitle.Position               = UDim2.new(0, 126, 0, 0)
-SubTitle.TextColor3             = B_MUTED
-SubTitle.Font                   = Enum.Font.Gotham
-SubTitle.TextSize               = 9
-SubTitle.BackgroundTransparency = 1
-SubTitle.TextXAlignment         = Enum.TextXAlignment.Left
-SubTitle.TextYAlignment         = Enum.TextYAlignment.Center
-SubTitle.ZIndex                 = 4
-
--- prettier close button
+-- close button  (white / neutral, no red)
 local CloseBtn = Instance.new("TextButton", Header)
-CloseBtn.Text                   = "⊗"
-CloseBtn.Size                   = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position               = UDim2.new(1, -36, 0.5, -15)
+CloseBtn.Text                   = "X"
+CloseBtn.Size                   = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position               = UDim2.new(1, -34, 0.5, -14)
 CloseBtn.Font                   = Enum.Font.GothamBold
-CloseBtn.TextColor3             = Color3.fromRGB(255, 80, 100)
-CloseBtn.TextSize               = 18
-CloseBtn.BackgroundColor3       = Color3.fromRGB(40, 8, 14)
-CloseBtn.BackgroundTransparency = 0.25
+CloseBtn.TextColor3             = Color3.fromRGB(200, 220, 255)
+CloseBtn.TextSize               = 12
+CloseBtn.BackgroundColor3       = Color3.fromRGB(10, 24, 60)
+CloseBtn.BackgroundTransparency = 0.20
 CloseBtn.ZIndex                 = 5
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 7)
 local CloseStroke = Instance.new("UIStroke", CloseBtn)
-CloseStroke.Color     = Color3.fromRGB(180, 30, 50)
+CloseStroke.Color     = B_STROKE
 CloseStroke.Thickness = 1
 
 -- =====================================================================
---  TOGGLE BUTTON  (floating ☬)
+--  TOGGLE BUTTON  (text "001")
 -- =====================================================================
 local ToggleBtn = Instance.new("TextButton", ScreenGui)
 ToggleBtn.Size                   = UDim2.new(0, 54, 0, 54)
 ToggleBtn.Position               = UDim2.new(0.88, 0, 0.12, 0)
-ToggleBtn.Text                   = "☬"
+ToggleBtn.Text                   = "001"
 ToggleBtn.Font                   = Enum.Font.GothamBold
-ToggleBtn.TextSize               = 26
+ToggleBtn.TextSize               = 14
 ToggleBtn.TextColor3             = B_BRIGHT
 ToggleBtn.BackgroundColor3       = B_BG
 ToggleBtn.BackgroundTransparency = 0.20
@@ -530,8 +498,8 @@ end)
 --  SIDEBAR
 -- =====================================================================
 local Sidebar = Instance.new("Frame", MainFrame)
-Sidebar.Size                   = UDim2.new(0, 94, 1, -50)
-Sidebar.Position               = UDim2.new(0, 5, 0, 44)
+Sidebar.Size                   = UDim2.new(0, 94, 1, -44)
+Sidebar.Position               = UDim2.new(0, 4, 0, 40)
 Sidebar.BackgroundColor3       = Color3.fromRGB(3, 7, 22)
 Sidebar.BackgroundTransparency = 0.50
 Sidebar.ZIndex                 = 3
@@ -551,11 +519,11 @@ SidebarPad.PaddingTop = UDim.new(0, 8)
 --  CONTENT CONTAINER
 -- =====================================================================
 local Container = Instance.new("Frame", MainFrame)
-Container.Size                = UDim2.new(1, -108, 1, -52)
-Container.Position            = UDim2.new(0, 104, 0, 46)
+Container.Size                   = UDim2.new(1, -108, 1, -46)
+Container.Position               = UDim2.new(0, 104, 0, 42)
 Container.BackgroundTransparency = 1
-Container.ClipsDescendants    = true
-Container.ZIndex              = 3
+Container.ClipsDescendants       = true
+Container.ZIndex                 = 3
 
 local Pages = {}
 local function CreatePage(tabName)
@@ -570,8 +538,8 @@ local function CreatePage(tabName)
     page.Visible              = false
     page.ZIndex               = 3
     local layout = Instance.new("UIListLayout", page)
-    layout.Padding    = UDim.new(0, 4)
-    layout.SortOrder  = Enum.SortOrder.LayoutOrder
+    layout.Padding   = UDim.new(0, 4)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
     local pad = Instance.new("UIPadding", page)
     pad.PaddingTop   = UDim.new(0, 4)
     pad.PaddingRight = UDim.new(0, 6)
@@ -608,13 +576,13 @@ local function SwitchTab(tabName)
     end
 end
 
-local function AddTabButton(name, icon, label)
+local function AddTabButton(name, label)
     local btn = Instance.new("TextButton", Sidebar)
-    btn.Size             = UDim2.new(0, 80, 0, 34)
-    btn.Text             = icon .. "  " .. label
+    btn.Size             = UDim2.new(0, 80, 0, 32)
+    btn.Text             = label
     btn.Font             = Enum.Font.GothamBold
-    btn.TextSize         = 10
-    btn.TextXAlignment   = Enum.TextXAlignment.Left
+    btn.TextSize         = 11
+    btn.TextXAlignment   = Enum.TextXAlignment.Center
     btn.TextColor3       = B_MUTED
     btn.BackgroundColor3 = Color3.fromRGB(6, 14, 40)
     btn.ZIndex           = 4
@@ -622,16 +590,15 @@ local function AddTabButton(name, icon, label)
     local s = Instance.new("UIStroke", btn)
     s.Color     = B_STROKE
     s.Thickness = 1
-    local pad = Instance.new("UIPadding", btn)
-    pad.PaddingLeft = UDim.new(0, 8)
     btn.MouseButton1Click:Connect(function() SwitchTab(name) end)
     TabButtons[name] = btn
 end
 
-AddTabButton("ESP",   "◈", "❰ESP❱")
-AddTabButton("AIM",   "◎", "❰AIM❱")
-AddTabButton("OTHER", "⚙", "❰OTHER❱")
-AddTabButton("ADMIN", "✦", "❰ADMIN❱")
+-- Tab labels: simple text + emoji that Roblox renders
+AddTabButton("ESP",   "👁 ESP")
+AddTabButton("AIM",   "🎯 AIM")
+AddTabButton("OTHER", "⚙ OTHER")
+AddTabButton("ADMIN", "★ ADMIN")
 
 -- =====================================================================
 --  WIDGET HELPERS
@@ -688,8 +655,7 @@ local function AddToggle(page, name, target, key, order)
     end
     Track.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            target[key] = not target[key]
-            Refresh()
+            target[key] = not target[key]; Refresh()
         end
     end)
     Refresh()
@@ -809,36 +775,36 @@ local function AddSelector(page, name, options, target, key, order)
     BS.Thickness = 1
     local idx = 1
     for i, v in ipairs(options) do if target[key] == v then idx = i; break end end
-    local function Upd() target[key] = options[idx]; Btn.Text = "‹ " .. options[idx] .. " ›" end
+    local function Upd() target[key] = options[idx]; Btn.Text = "< " .. options[idx] .. " >" end
     Btn.MouseButton1Click:Connect(function() idx = (idx % #options) + 1; Upd() end)
     Upd()
 end
 
 -- =====================================================================
---  ESP PAGE CONTENT
+--  ESP PAGE
 -- =====================================================================
-AddToggle(EspPage,   "MASTER ESP",   Settings.ESP,  "Enabled",  1)
-AddToggle(EspPage,   "BOX",          Settings.ESP,  "Box",      2)
-AddToggle(EspPage,   "SKELETON",     Settings.ESP,  "Skeleton", 3)
-AddToggle(EspPage,   "NAME TAG",     Settings.ESP,  "Name",     4)
-AddToggle(EspPage,   "HEALTH BAR",   Settings.ESP,  "Health",   5)
-AddToggle(EspPage,   "TRACER LINE",  Settings.ESP,  "Line",     6)
-AddSelector(EspPage, "LINE POS", {"TOP", "CENTER", "BOTTOM"}, Settings.ESP, "LinePos", 7)
+AddToggle(EspPage,   "MASTER ESP",  Settings.ESP, "Enabled",  1)
+AddToggle(EspPage,   "BOX",         Settings.ESP, "Box",      2)
+AddToggle(EspPage,   "SKELETON",    Settings.ESP, "Skeleton", 3)
+AddToggle(EspPage,   "NAME TAG",    Settings.ESP, "Name",     4)
+AddToggle(EspPage,   "HEALTH BAR",  Settings.ESP, "Health",   5)
+AddToggle(EspPage,   "TRACER LINE", Settings.ESP, "Line",     6)
+AddSelector(EspPage, "LINE POS", {"TOP","CENTER","BOTTOM"}, Settings.ESP, "LinePos", 7)
 AddSlider(EspPage,   "THICKNESS", 0.5, 3, Settings.ESP, "Thickness", 8)
 
 -- =====================================================================
---  AIM PAGE CONTENT
+--  AIM PAGE
 -- =====================================================================
 AddToggle(AimPage, "SILENT AIM",      Settings.Aim, "SilentAim",      1)
 AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 2)
 AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 3)
 
 -- =====================================================================
---  OTHER PAGE CONTENT
+--  OTHER PAGE
 -- =====================================================================
 AddToggle(OtherPage, "ATTRACT PLAYERS", Settings.Other, "AttractPlayers", 1)
 
-local flyCard   = MakeCard(OtherPage, 10)
+local flyCard   = MakeCard(OtherPage, 2)
 local flyAccent = Instance.new("Frame", flyCard)
 flyAccent.Size             = UDim2.new(0, 3, 0, 18)
 flyAccent.Position         = UDim2.new(0, 0, 0.5, -9)
@@ -937,8 +903,8 @@ local function MakeFlySlider(order, name, key)
     end)
 end
 
-MakeFlySlider(11, "FLY HIGH",    "FlyHeight")
-MakeFlySlider(12, "FAST FLIGHT", "FlySpeed")
+MakeFlySlider(3, "FLY HIGH",    "FlyHeight")
+MakeFlySlider(4, "FAST FLIGHT", "FlySpeed")
 
 local function RefreshFlyToggle()
     local on = Settings.Other.Fly
@@ -954,33 +920,42 @@ flyTrack.InputBegan:Connect(function(i)
 end)
 RefreshFlyToggle()
 
--- =====================================================================
---  OTHER PAGE  —  TELEPORT LIST
--- =====================================================================
-local tereptolHeader = MakeCard(OtherPage, 50)
-tereptolHeader.BackgroundColor3 = Color3.fromRGB(3, 8, 24)
-local tereptolAccent = Instance.new("Frame", tereptolHeader)
-tereptolAccent.Size             = UDim2.new(0, 3, 0, 18)
-tereptolAccent.Position         = UDim2.new(0, 0, 0.5, -9)
-tereptolAccent.BackgroundColor3 = B_BLUE
-tereptolAccent.ZIndex           = 5
-Instance.new("UICorner", tereptolAccent).CornerRadius = UDim.new(1, 0)
-local tereptolTitle = Instance.new("TextLabel", tereptolHeader)
-tereptolTitle.Text                   = "⟨ TELEPORT ⟩"
-tereptolTitle.Size                   = UDim2.new(1, -12, 1, 0)
-tereptolTitle.Position               = UDim2.new(0, 12, 0, 0)
-tereptolTitle.Font                   = Enum.Font.GothamBold
-tereptolTitle.TextSize               = 10
-tereptolTitle.TextColor3             = B_BLUE
-tereptolTitle.BackgroundTransparency = 1
-tereptolTitle.TextXAlignment         = Enum.TextXAlignment.Left
-tereptolTitle.ZIndex                 = 5
+-- teleport section header (hidden until there are other players)
+local tpHeader = MakeCard(OtherPage, 10)
+tpHeader.BackgroundColor3 = Color3.fromRGB(3, 8, 24)
+tpHeader.Visible          = false
+local tpAcc = Instance.new("Frame", tpHeader)
+tpAcc.Size             = UDim2.new(0, 3, 0, 18)
+tpAcc.Position         = UDim2.new(0, 0, 0.5, -9)
+tpAcc.BackgroundColor3 = B_BLUE
+tpAcc.ZIndex           = 5
+Instance.new("UICorner", tpAcc).CornerRadius = UDim.new(1, 0)
+local tpTitle = Instance.new("TextLabel", tpHeader)
+tpTitle.Text                   = "TELEPORT"
+tpTitle.Size                   = UDim2.new(1, -12, 1, 0)
+tpTitle.Position               = UDim2.new(0, 12, 0, 0)
+tpTitle.Font                   = Enum.Font.GothamBold
+tpTitle.TextSize               = 10
+tpTitle.TextColor3             = B_BRIGHT
+tpTitle.BackgroundTransparency = 1
+tpTitle.TextXAlignment         = Enum.TextXAlignment.Left
+tpTitle.ZIndex                 = 5
 
-local tpCardOrder = 51
+local tpCardOrder = 11
 local tpCards     = {}
+local tpCount     = 0
+
+local function RefreshTpHeader()
+    tpHeader.Visible = tpCount > 0
+end
 
 local function RemoveTpCard(player)
-    if tpCards[player] then tpCards[player]:Destroy(); tpCards[player] = nil end
+    if tpCards[player] then
+        tpCards[player]:Destroy()
+        tpCards[player] = nil
+        tpCount = math.max(tpCount - 1, 0)
+        RefreshTpHeader()
+    end
 end
 
 local function AddTpCard(player)
@@ -997,7 +972,7 @@ local function AddTpCard(player)
     s.Color     = B_DARK
     s.Thickness = 1
     local nameLabel = Instance.new("TextLabel", f)
-    nameLabel.Text                   = "→  " .. player.Name
+    nameLabel.Text                   = "> " .. player.Name
     nameLabel.Size                   = UDim2.new(0.6, 0, 1, 0)
     nameLabel.Position               = UDim2.new(0, 10, 0, 0)
     nameLabel.Font                   = Enum.Font.GothamBold
@@ -1026,6 +1001,8 @@ local function AddTpCard(player)
         end
     end)
     tpCards[player] = f
+    tpCount         = tpCount + 1
+    RefreshTpHeader()
 end
 
 for _, p in pairs(Players:GetPlayers()) do
@@ -1039,32 +1016,58 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 -- =====================================================================
---  ADMIN PAGE  —  TOUCH (instant void-warp)
+--  ADMIN PAGE  —  TOUCH (void fling, actually works)
 -- =====================================================================
 local function TouchPlayer(player)
-    pcall(function()
-        local char = player.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.CFrame = CFrame.new(
-                math.random(-50000, 50000),
-                -5000,
-                math.random(-50000, 50000)
+    task.spawn(function()
+        pcall(function()
+            local char = player.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+
+            -- Step 1: remove any existing network bodymovers so ours dominates
+            for _, child in ipairs(root:GetChildren()) do
+                if child:IsA("BodyVelocity") or child:IsA("BodyForce") or child:IsA("BodyGyro") then
+                    pcall(function() child:Destroy() end)
+                end
+            end
+
+            -- Step 2: slam downward with extreme BodyVelocity (void fling)
+            local bv      = Instance.new("BodyVelocity")
+            bv.Name       = "_TouchFling"
+            bv.Velocity   = Vector3.new(
+                math.random(-300, 300),
+                -99999,
+                math.random(-300, 300)
             )
-        end
+            bv.MaxForce   = Vector3.new(1e12, 1e12, 1e12)
+            bv.P          = 1e12
+            bv.Parent     = root
+
+            -- Step 3: also directly set CFrame to void (works on games without anti-cheat)
+            pcall(function()
+                root.CFrame = CFrame.new(root.Position.X, -9999, root.Position.Z)
+            end)
+
+            -- Step 4: keep fling alive briefly then remove
+            task.wait(0.5)
+            pcall(function() bv:Destroy() end)
+        end)
     end)
 end
 
+-- admin section header (hidden until there are other players)
 local adminHeader = MakeCard(AdminPage, 1)
 adminHeader.BackgroundColor3 = Color3.fromRGB(3, 6, 22)
-local adminAccentBar = Instance.new("Frame", adminHeader)
-adminAccentBar.Size             = UDim2.new(0, 3, 0, 18)
-adminAccentBar.Position         = UDim2.new(0, 0, 0.5, -9)
-adminAccentBar.BackgroundColor3 = B_BLUE
-adminAccentBar.ZIndex           = 5
-Instance.new("UICorner", adminAccentBar).CornerRadius = UDim.new(1, 0)
+adminHeader.Visible          = false
+local adminAcc = Instance.new("Frame", adminHeader)
+adminAcc.Size             = UDim2.new(0, 3, 0, 18)
+adminAcc.Position         = UDim2.new(0, 0, 0.5, -9)
+adminAcc.BackgroundColor3 = B_BLUE
+adminAcc.ZIndex           = 5
+Instance.new("UICorner", adminAcc).CornerRadius = UDim.new(1, 0)
 local adminTitle = Instance.new("TextLabel", adminHeader)
-adminTitle.Text                   = "✦ TOUCH  —  select a player"
+adminTitle.Text                   = "TOUCH  —  tap to void-warp"
 adminTitle.Size                   = UDim2.new(1, -12, 1, 0)
 adminTitle.Position               = UDim2.new(0, 12, 0, 0)
 adminTitle.Font                   = Enum.Font.GothamBold
@@ -1076,9 +1079,19 @@ adminTitle.ZIndex                 = 5
 
 local adminCardOrder = 2
 local adminCards     = {}
+local adminCount     = 0
+
+local function RefreshAdminHeader()
+    adminHeader.Visible = adminCount > 0
+end
 
 local function RemoveAdminCard(player)
-    if adminCards[player] then adminCards[player]:Destroy(); adminCards[player] = nil end
+    if adminCards[player] then
+        adminCards[player]:Destroy()
+        adminCards[player] = nil
+        adminCount = math.max(adminCount - 1, 0)
+        RefreshAdminHeader()
+    end
 end
 
 local function AddAdminCard(player)
@@ -1096,7 +1109,7 @@ local function AddAdminCard(player)
     fStroke.Thickness = 1
 
     local nameLabel = Instance.new("TextLabel", f)
-    nameLabel.Text                   = "⬡  " .. player.Name
+    nameLabel.Text                   = "> " .. player.Name
     nameLabel.Size                   = UDim2.new(1, -110, 1, 0)
     nameLabel.Position               = UDim2.new(0, 12, 0, 0)
     nameLabel.Font                   = Enum.Font.GothamBold
@@ -1107,37 +1120,37 @@ local function AddAdminCard(player)
     nameLabel.ZIndex                 = 5
 
     local touchBtn = Instance.new("TextButton", f)
-    touchBtn.Text                   = "⚡ TOUCH"
+    touchBtn.Text                   = "TOUCH"
     touchBtn.Font                   = Enum.Font.GothamBold
-    touchBtn.TextSize               = 9
+    touchBtn.TextSize               = 10
     touchBtn.TextColor3             = Color3.fromRGB(255, 255, 255)
     touchBtn.BackgroundColor3       = Color3.fromRGB(0, 60, 180)
     touchBtn.BackgroundTransparency = 0.10
-    touchBtn.Size                   = UDim2.new(0, 84, 0, 26)
-    touchBtn.Position               = UDim2.new(1, -92, 0.5, -13)
+    touchBtn.Size                   = UDim2.new(0, 80, 0, 28)
+    touchBtn.Position               = UDim2.new(1, -88, 0.5, -14)
     touchBtn.ZIndex                 = 5
     Instance.new("UICorner", touchBtn).CornerRadius = UDim.new(0, 7)
     local tStroke = Instance.new("UIStroke", touchBtn)
     tStroke.Color     = B_BRIGHT
     tStroke.Thickness = 1
-
     local tGrad = Instance.new("UIGradient", touchBtn)
-    tGrad.Color    = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 100, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 40, 160)) })
+    tGrad.Color    = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 110, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 40, 160)) })
     tGrad.Rotation = 90
 
     touchBtn.MouseButton1Click:Connect(function()
         TouchPlayer(player)
-        touchBtn.Text = "✔ DONE"
-        touchBtn.BackgroundColor3 = Color3.fromRGB(0, 40, 120)
-        task.delay(1.2, function()
+        local orig = touchBtn.Text
+        touchBtn.Text = "DONE"
+        task.delay(1.5, function()
             if touchBtn and touchBtn.Parent then
-                touchBtn.Text = "⚡ TOUCH"
-                touchBtn.BackgroundColor3 = Color3.fromRGB(0, 60, 180)
+                touchBtn.Text = orig
             end
         end)
     end)
 
     adminCards[player] = f
+    adminCount         = adminCount + 1
+    RefreshAdminHeader()
 end
 
 for _, p in pairs(Players:GetPlayers()) do
@@ -1151,13 +1164,12 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 -- =====================================================================
---  ANIMATED STROKE  (blue cycling)
+--  ANIMATED STROKE
 -- =====================================================================
 RunService.RenderStepped:Connect(function()
     MainStroke.Color            = currentAutoColor
     ToggleStroke.Color          = currentAutoColor
     HeaderLine.BackgroundColor3 = currentAutoColor
-    CloseStroke.Color           = Color3.fromRGB(180, 30, 50)
 end)
 
 SwitchTab("ESP")
