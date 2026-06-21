@@ -1,419 +1,99 @@
--- DexSpy V1.2
--- FIXED BY MANUS AI (MOBILE UI & HOOKING FIX)
+-- Remote Scanner (Copy All) by Manus AI
+-- This script scans for all RemoteEvents and RemoteFunctions in the game
+-- and copies their invocation code to your clipboard in a single formatted string.
+-- Just run the script, and the codes will be in your clipboard!
 
-local colorSettings =
-{
-    ["Main"] = {
-        ["HeaderColor"] = Color3.fromRGB(40, 40, 40),
-        ["HeaderShadingColor"] = Color3.fromRGB(60, 60, 60),
-        ["HeaderTextColor"] = Color3.fromRGB(255, 165, 0),
-        ["MainBackgroundColor"] = Color3.fromRGB(30, 30, 30),
-        ["InfoScrollingFrameBgColor"] = Color3.fromRGB(30, 30, 30),
-        ["ScrollBarImageColor"] = Color3.fromRGB(100, 110, 130)
-    },
-    ["RemoteButtons"] = {
-        ["BorderColor"] = Color3.fromRGB(255, 140, 0),
-        ["BackgroundColor"] = Color3.fromRGB(50, 50, 50),
-        ["TextColor"] = Color3.fromRGB(240, 240, 240),
-        ["NumberTextColor"] = Color3.fromRGB(255, 165, 0)
-    },
-    ["MainButtons"] = { 
-        ["BorderColor"] = Color3.fromRGB(255, 140, 0),
-        ["BackgroundColor"] = Color3.fromRGB(50, 50, 50),
-        ["TextColor"] = Color3.fromRGB(240, 240, 240)
-    },
-    ['Code'] = {
-        ['BackgroundColor'] = Color3.fromRGB(30, 35, 43),
-        ['TextColor'] = Color3.fromRGB(240, 240, 240),
-        ['CreditsColor'] = Color3.fromRGB(200, 200, 200)
-    },
-}
-
-local settings = {
-    ["Keybind"] = "P"
-}
-
--- Check for isfile/writefile/readfile
-local isfile = isfile or function(f) local s, r = pcall(readfile, f) return s end
-
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
-if not isfile("DexSpySettings.json") then
-    pcall(writefile, "DexSpySettings.json", HttpService:JSONEncode(settings))
-else
-    local success, content = pcall(readfile, "DexSpySettings.json")
-    if success then
-        local decoded = HttpService:JSONDecode(content)
-        if decoded["Main"] then
-            pcall(writefile, "DexSpySettings.json", HttpService:JSONEncode(settings))
-        else
-            settings = decoded
-        end
-    end
-end
 
-function isSynapse()
-    return (syn and not PROTOSMASHER_LOADED) or false
-end
-
-function Parent(GUI)
-    local success, coreGui = pcall(game.GetService, game, "CoreGui")
-    if success then
-        if syn and syn.protect_gui then syn.protect_gui(GUI) end
-        GUI.Parent = coreGui
-    else
-        GUI.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-    end
-end
-
-local client = game.Players.LocalPlayer
-local function toUnicode(string)
-    local codepoints = "utf8.char("
-    for _i, v in utf8.codes(string) do codepoints = codepoints .. v .. ', ' end
-    return codepoints:sub(1, -3) .. ')'
-end
-
+-- Function to get the full path of an instance
 local function GetFullPathOfAnInstance(instance)
     if not instance then return "nil" end
     local name = instance.Name
-    local head = (#name > 0 and '.' .. name) or "['']"
-    if not instance.Parent and instance ~= game then return head .. " --[[ PARENTED TO NIL OR DESTROYED ]]" end
-    if instance == game then return "game"
-    elseif instance == workspace then return "workspace"
+    local head = (#name > 0 and "." .. name) or "[" .. HttpService:JSONEncode(name) .. "]"
+
+    if not instance.Parent and instance ~= game then
+        return head .. " --[[ PARENTED TO NIL OR DESTROYED ]]"
+    end
+
+    if instance == game then
+        return "game"
+    elseif instance == workspace then
+        return "workspace"
     else
         local success, result = pcall(game.GetService, game, instance.ClassName)
-        if result then head = ':GetService("' .. instance.ClassName .. '")'
-        elseif instance == client then head = '.LocalPlayer' 
+        if success and result then
+            head = ":GetService(" .. HttpService:JSONEncode(instance.ClassName) .. ")"
+        elseif instance == LocalPlayer then
+            head = ".LocalPlayer"
         else
-            local nonAlphaNum = name:gsub('[%w_]', '')
-            local noPunct = nonAlphaNum:gsub('[%s%p]', '')
-            if tonumber(name:sub(1, 1)) or (#nonAlphaNum ~= 0 and #noPunct == 0) then head = '["' .. name:gsub('"', '\\"'):gsub('\\', '\\\\') .. '"]'
-            elseif #nonAlphaNum ~= 0 and #noPunct > 0 then head = '[' .. toUnicode(name) .. ']' end
+            -- Handle names with special characters or starting with numbers
+            local safeName = name:gsub("[" .. string.gsub("\%^%$().[]*+-?{}", ".", "%%%0") .. "]", "%%")
+            if string.match(name, "^%d") or string.match(name, "[^%w_]") then
+                head = "[" .. HttpService:JSONEncode(name) .. "]"
+            else
+                head = "." .. name
+            end
         end
     end
     return GetFullPathOfAnInstance(instance.Parent) .. head
 end
 
-local isA = game.IsA
-local clone = game.Clone
-local TextService = game:GetService("TextService")
-local getTextSize = TextService.GetTextSize
+local remoteCodes = {}
+local count = 1
 
-local oldGui = game:GetService("CoreGui"):FindFirstChild("DexSpyGUI") or game:GetService("Players").LocalPlayer:FindFirstChild("DexSpyGUI", true)
-if oldGui then oldGui:Destroy() end
+-- Scan for remotes and generate their invocation code
+for _, v in pairs(game:GetDescendants()) do
+    if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+        local remotePath = GetFullPathOfAnInstance(v)
+        local invocationCode
 
-local buttonOffset = -25
-local scrollSizeOffset = 287
-local functionImage = "http://www.roblox.com/asset/?id=413369623"
-local eventImage = "http://www.roblox.com/asset/?id=413369506"
-local remotes, remoteArgs, remoteButtons, remoteScripts, IgnoreList, BlockList, connections, unstacked = {}, {}, {}, {}, {}, {}, {}, {}
-
-local DexSpyGUI = Instance.new("ScreenGui")
-local mainFrame = Instance.new("Frame")
-local Header = Instance.new("Frame")
-local HeaderShading = Instance.new("Frame")
-local HeaderTextLabel = Instance.new("TextLabel")
-local RemoteScrollFrame = Instance.new("ScrollingFrame")
-local RemoteButton = Instance.new("TextButton")
-local Number = Instance.new("TextLabel")
-local RemoteName = Instance.new("TextLabel")
-local RemoteIcon = Instance.new("ImageLabel")
-local InfoFrame = Instance.new("Frame")
-local InfoFrameHeader = Instance.new("Frame")
-local InfoTitleShading = Instance.new("Frame")
-local CodeFrame = Instance.new("ScrollingFrame")
-local Code = Instance.new("TextLabel")
-local CodeComment = Instance.new("TextLabel")
-local InfoHeaderText = Instance.new("TextLabel")
-local InfoButtonsScroll = Instance.new("ScrollingFrame")
-local CopyCode, RunCode, CopyScriptPath, CopyDecompiled, IgnoreRemote, BlockRemote, WhileLoop, CopyReturn, Clear, FrameDivider, CloseInfoFrame, OpenInfoFrame, Minimize, DoNotStack, ImageButton = 
-Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("Frame"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("ImageButton")
-
-local BrowserHeader, BrowserHeaderFrame, BrowserHeaderText, CloseInfoFrame2, RemoteBrowserFrame, RemoteButton2, RemoteName2, RemoteIcon2 = 
-Instance.new("Frame"), Instance.new("Frame"), Instance.new("TextLabel"), Instance.new("TextButton"), Instance.new("ScrollingFrame"), Instance.new("TextButton"), Instance.new("TextLabel"), Instance.new("ImageLabel")
-
-DexSpyGUI.Name = "DexSpyGUI"
-DexSpyGUI.ResetOnSpawn = false
-Parent(DexSpyGUI)
-
-mainFrame.Name = "mainFrame"
-mainFrame.Parent = DexSpyGUI
-mainFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-mainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-mainFrame.Position = UDim2.new(0.1, 0, 0.24, 0)
-mainFrame.Size = UDim2.new(0, 207, 0, 35)
-mainFrame.ZIndex = 8
-mainFrame.Active = true
-mainFrame.Draggable = true
-
-Header.Name = "Header"
-Header.Parent = mainFrame
-Header.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-Header.Size = UDim2.new(0, 207, 0, 26)
-Header.ZIndex = 9
-
-HeaderShading.Name = "HeaderShading"
-HeaderShading.Parent = Header
-HeaderShading.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
-HeaderShading.Position = UDim2.new(0, 0, 1, 0)
-HeaderShading.Size = UDim2.new(0, 207, 0, 9)
-HeaderShading.ZIndex = 8
-
-HeaderTextLabel.Parent = Header
-HeaderTextLabel.BackgroundTransparency = 1
-HeaderTextLabel.Size = UDim2.new(1, 0, 1, 0)
-HeaderTextLabel.Text = "DexSpy V1.2"
-HeaderTextLabel.TextColor3 = colorSettings["Main"]["HeaderTextColor"]
-HeaderTextLabel.TextSize = 17
-HeaderTextLabel.Font = Enum.Font.SourceSans
-
-RemoteScrollFrame.Name = "RemoteScrollFrame"
-RemoteScrollFrame.Parent = mainFrame
-RemoteScrollFrame.BackgroundColor3 = colorSettings["Main"]["MainBackgroundColor"]
-RemoteScrollFrame.Position = UDim2.new(0, 0, 1, 0)
-RemoteScrollFrame.Size = UDim2.new(0, 207, 0, 286)
-RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 287)
-RemoteScrollFrame.ScrollBarThickness = 8
-RemoteScrollFrame.ZIndex = 7
-
-RemoteButton.Name = "RemoteButton"
-RemoteButton.Parent = RemoteScrollFrame
-RemoteButton.Size = UDim2.new(0, 182, 0, 26)
-RemoteButton.BackgroundColor3 = colorSettings["RemoteButtons"]["BackgroundColor"]
-RemoteButton.Visible = false
-
-Number.Name = "Number"
-Number.Parent = RemoteButton
-Number.Size = UDim2.new(0, 20, 1, 0)
-Number.Text = "1"
-Number.TextColor3 = colorSettings["RemoteButtons"]["NumberTextColor"]
-Number.BackgroundTransparency = 1
-
-RemoteName.Name = "RemoteName"
-RemoteName.Parent = RemoteButton
-RemoteName.Position = UDim2.new(0, 25, 0, 0)
-RemoteName.Size = UDim2.new(1, -55, 1, 0)
-RemoteName.TextColor3 = colorSettings["RemoteButtons"]["TextColor"]
-RemoteName.TextXAlignment = Enum.TextXAlignment.Left
-RemoteName.BackgroundTransparency = 1
-
-RemoteIcon.Name = "RemoteIcon"
-RemoteIcon.Parent = RemoteButton
-RemoteIcon.Position = UDim2.new(1, -25, 0, 1)
-RemoteIcon.Size = UDim2.new(0, 24, 0, 24)
-RemoteIcon.Image = eventImage
-RemoteIcon.BackgroundTransparency = 1
-
-InfoFrame.Name = "InfoFrame"
-InfoFrame.Parent = mainFrame
-InfoFrame.BackgroundColor3 = colorSettings["Main"]["MainBackgroundColor"]
-InfoFrame.Position = UDim2.new(0, 215, 0, 0) -- FIXED POSITION: Always next to mainFrame
-InfoFrame.Size = UDim2.new(0, 350, 0, 322)
-InfoFrame.ZIndex = 7
-InfoFrame.Visible = false
-
-InfoFrameHeader.Name = "InfoFrameHeader"
-InfoFrameHeader.Parent = InfoFrame
-InfoFrameHeader.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-InfoFrameHeader.Size = UDim2.new(1, 0, 0, 26)
-InfoFrameHeader.ZIndex = 11
-
-InfoTitleShading.Name = "InfoTitleShading"
-InfoTitleShading.Parent = InfoFrameHeader
-InfoTitleShading.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
-InfoTitleShading.Position = UDim2.new(0, 0, 1, 0)
-InfoTitleShading.Size = UDim2.new(1, 0, 0, 9)
-InfoTitleShading.ZIndex = 10
-
-CodeFrame.Name = "CodeFrame"
-CodeFrame.Parent = InfoFrame
-CodeFrame.BackgroundColor3 = colorSettings["Code"]["BackgroundColor"]
-CodeFrame.Position = UDim2.new(0.05, 0, 0.13, 0)
-CodeFrame.Size = UDim2.new(0.9, 0, 0.2, 0)
-CodeFrame.ZIndex = 16
-CodeFrame.CanvasSize = UDim2.new(2, 0, 2, 0)
-
-Code.Name = "Code"
-Code.Parent = CodeFrame
-Code.Size = UDim2.new(1, 0, 1, 0)
-Code.TextColor3 = colorSettings["Code"]["TextColor"]
-Code.Text = "Thanks for using DexSpy!"
-Code.TextXAlignment = Enum.TextXAlignment.Left
-Code.BackgroundTransparency = 1
-
-CodeComment.Name = "CodeComment"
-CodeComment.Parent = CodeFrame
-CodeComment.Size = UDim2.new(1, 0, 0, 20)
-CodeComment.Text = "-- Remote Spy Developed by Deccatron"
-CodeComment.TextColor3 = colorSettings["Code"]["CreditsColor"]
-CodeComment.BackgroundTransparency = 1
-CodeComment.TextXAlignment = Enum.TextXAlignment.Left
-
-InfoHeaderText.Name = "InfoHeaderText"
-InfoHeaderText.Parent = InfoFrame
-InfoHeaderText.Size = UDim2.new(1, 0, 0, 26)
-InfoHeaderText.Text = "Info: RemoteFunction"
-InfoHeaderText.TextColor3 = colorSettings["Main"]["HeaderTextColor"]
-InfoHeaderText.BackgroundTransparency = 1
-InfoHeaderText.ZIndex = 18
-
-InfoButtonsScroll.Name = "InfoButtonsScroll"
-InfoButtonsScroll.Parent = InfoFrame
-InfoButtonsScroll.Position = UDim2.new(0.05, 0, 0.35, 0)
-InfoButtonsScroll.Size = UDim2.new(0.9, 0, 0.6, 0)
-InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, 1.5, 0)
-InfoButtonsScroll.BackgroundTransparency = 1
-
--- Function to create buttons easily
-local function createButton(name, text, pos, parent)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Text = text
-    btn.Size = UDim2.new(1, 0, 0, 26)
-    btn.Position = UDim2.new(0, 0, 0, pos)
-    btn.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-    btn.TextColor3 = Color3.fromRGB(250, 251, 255)
-    btn.Parent = parent
-    return btn
-end
-
-CopyCode = createButton("CopyCode", "Copy code", 10, InfoButtonsScroll)
-RunCode = createButton("RunCode", "Execute", 45, InfoButtonsScroll)
-CopyScriptPath = createButton("CopyScriptPath", "Copy script path", 80, InfoButtonsScroll)
-CopyDecompiled = createButton("CopyDecompiled", "Copy decompiled script", 115, InfoButtonsScroll)
-DoNotStack = createButton("DoNotStack", "Unstack remote when fired with new args", 150, InfoButtonsScroll)
-IgnoreRemote = createButton("IgnoreRemote", "Ignore remote", 185, InfoButtonsScroll)
-BlockRemote = createButton("BlockRemote", "Block remote from firing", 220, InfoButtonsScroll)
-Clear = createButton("Clear", "Clear logs", 255, InfoButtonsScroll)
-WhileLoop = createButton("WhileLoop", "Generate while loop script", 290, InfoButtonsScroll)
-CopyReturn = createButton("CopyReturn", "Execute and copy return value", 325, InfoButtonsScroll)
-
-local InfoFrameOpen = false
-CloseInfoFrame = createButton("CloseInfoFrame", "X", 2, InfoFrameHeader)
-CloseInfoFrame.Size = UDim2.new(0, 22, 0, 22)
-CloseInfoFrame.Position = UDim2.new(1, -25, 0, 2)
-CloseInfoFrame.TextColor3 = Color3.fromRGB(0, 0, 0)
-CloseInfoFrame.MouseButton1Click:Connect(function()
-    InfoFrame.Visible = false
-    InfoFrameOpen = false
-    mainFrame.Size = UDim2.new(0, 207, 0, 35)
-end)
-
-OpenInfoFrame = createButton("OpenInfoFrame", ">", 2, mainFrame)
-OpenInfoFrame.Size = UDim2.new(0, 22, 0, 22)
-OpenInfoFrame.Position = UDim2.new(0, 185, 0, 2)
-OpenInfoFrame.TextColor3 = Color3.fromRGB(0, 0, 0)
-OpenInfoFrame.MouseButton1Click:Connect(function()
-    if not InfoFrame.Visible then
-        mainFrame.Size = UDim2.new(0, 565, 0, 35)
-        OpenInfoFrame.Text = "<"
-    else
-        mainFrame.Size = UDim2.new(0, 207, 0, 35)
-        OpenInfoFrame.Text = ">"
-    end
-    InfoFrame.Visible = not InfoFrame.Visible
-    InfoFrameOpen = not InfoFrameOpen
-end)
-
-Minimize = createButton("Minimize", "_", 2, mainFrame)
-Minimize.Size = UDim2.new(0, 22, 0, 22)
-Minimize.Position = UDim2.new(0, 164, 0, 2)
-Minimize.TextColor3 = Color3.fromRGB(0, 0, 0)
-Minimize.MouseButton1Click:Connect(function()
-    RemoteScrollFrame.Visible = not RemoteScrollFrame.Visible
-end)
-
--- Main logic
-local function FindRemote(remote, args)
-    for i, v in pairs(remotes) do
-        if v == remote then
-            if table.find(unstacked, remote) then
-                local match = true
-                if #remoteArgs[i] == #args then
-                    for k, arg in pairs(args) do if remoteArgs[i][k] ~= arg then match = false break end end
-                else match = false end
-                if match then return i end
-            else return i end
+        if v:IsA("RemoteEvent") then
+            invocationCode = remotePath .. ":FireServer()"
+        elseif v:IsA("RemoteFunction") then
+            invocationCode = remotePath .. ":InvokeServer()"
         end
-    end
-    return nil
-end
-
-local function convertTableToString(args)
-    local s = ""
-    for i, v in pairs(args) do
-        local val = tostring(v)
-        if type(v) == "string" then val = '"' .. v .. '"'
-        elseif typeof(v) == "Instance" then val = GetFullPathOfAnInstance(v)
-        elseif type(v) == "table" then val = "{" .. convertTableToString(v) .. "}" end
-        s = s .. (type(i) == "number" and "" or '["'..tostring(i)..'"] = ') .. val .. ", "
-    end
-    return s:sub(1, -3)
-end
-
-function addToList(event, remote, ...)
-    if not remote then return end
-    local args = {...}
-    local i = FindRemote(remote, args)
-    if not i then
-        table.insert(remotes, remote)
-        table.insert(remoteArgs, args)
-        table.insert(remoteScripts, (getcallingscript and getcallingscript()) or nil)
         
-        local rButton = clone(RemoteButton)
-        rButton.Parent = RemoteScrollFrame
-        rButton.Visible = true
-        rButton.RemoteName.Text = remote.Name
-        rButton.RemoteIcon.Image = event and eventImage or functionImage
-        buttonOffset = buttonOffset + 35
-        rButton.Position = UDim2.new(0.09, 0, 0, buttonOffset)
-        RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, buttonOffset + 40)
-        
-        local index = #remotes
-        remoteButtons[index] = rButton.Number
-        rButton.MouseButton1Click:Connect(function()
-            InfoHeaderText.Text = "Info: " .. remote.Name
-            InfoFrame.Visible = true
-            Code.Text = GetFullPathOfAnInstance(remote) .. (event and ":FireServer(" or ":InvokeServer(") .. convertTableToString(args) .. ")"
-            lookingAt, lookingAtArgs = remote, args
-        end)
-    else
-        remoteButtons[i].Text = tostring(tonumber(remoteButtons[i].Text) + 1)
-        remoteArgs[i] = args
+        table.insert(remoteCodes, string.format("%d.\n%s\n", count, invocationCode))
+        count = count + 1
     end
 end
 
--- HOOKING FIX FOR MOBILE
-local function HookMethod(className, methodName, callback)
-    local old
-    old = hookfunction(Instance.new(className)[methodName], function(self, ...)
-        if not checkcaller() then pcall(callback, self, ...) end
-        return old(self, ...)
-    end)
+-- Combine all codes into a single string
+local finalOutput = table.concat(remoteCodes, "\n")
+
+-- Copy to clipboard
+if setclipboard then
+    setclipboard(finalOutput)
+    print("Remote invocation codes copied to clipboard!")
+    print("Total remotes found: " .. (#remoteCodes))
+else
+    warn("setclipboard() is not available. Please copy the following manually:\n" .. finalOutput)
 end
 
-pcall(HookMethod, "RemoteEvent", "FireServer", function(s, ...) addToList(true, s, ...) end)
-pcall(HookMethod, "RemoteFunction", "InvokeServer", function(s, ...) addToList(false, s, ...) end)
+-- Optional: Display a temporary message in-game (for mobile users without console access)
+local function showTemporaryMessage(message, duration)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ClipboardMessageGUI"
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local mt = getrawmetatable(game)
-local oldNc = mt.__namecall
-setreadonly(mt, false)
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    if not checkcaller() then
-        if method == "FireServer" then pcall(addToList, true, self, ...)
-        elseif method == "InvokeServer" then pcall(addToList, false, self, ...) end
-    end
-    return oldNc(self, ...)
-end)
-setreadonly(mt, true)
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(0, 300, 0, 50)
+    textLabel.Position = UDim2.new(0.5, -150, 0.9, -25)
+    textLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    textLabel.Text = message
+    textLabel.Font = Enum.Font.SourceSansBold
+    textLabel.TextSize = 18
+    textLabel.ZIndex = 10
+    textLabel.Parent = gui
 
--- Additional Hook for Namecall method string (Mobile support)
-local oldIndex
-oldIndex = hookmetamethod(game, "__index", function(self, key)
-    if not checkcaller() and (key == "FireServer" or key == "InvokeServer") then
-        -- This part helps in some mobile executors where namecall is handled differently
-    end
-    return oldIndex(self, key)
-end)
+    game:GetService("Debris"):AddItem(gui, duration)
+end
 
-print("DexSpy Mobile Fixed Loaded!")
+if setclipboard then
+    showTemporaryMessage("Copied " .. (#remoteCodes) .. " remote codes to clipboard!", 5)
+else
+    showTemporaryMessage("setclipboard() not found. Check console for output.", 5)
+end
