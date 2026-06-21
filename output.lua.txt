@@ -1134,6 +1134,14 @@ local function AddRapidToggle(page, label, order, fn)
 end
 
 
+AddRapidToggle(AdminPage, "Panel",  2, function()
+    game:GetService("ReplicatedStorage").Remotes.Admin.OpenPanel:FireServer()
+end)
+
+AddRapidToggle(AdminPage, "Reward", 3, function()
+    game:GetService("ReplicatedStorage").Remotes.FreeReward.Claim:FireServer()
+end)
+
 -- =====================================================================
 --  ANIMATED STROKE
 -- =====================================================================
