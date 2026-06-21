@@ -545,7 +545,7 @@ end
 local EspPage   = CreatePage("ESP")
 local AimPage   = CreatePage("AIM")
 local OtherPage = CreatePage("OTHER")
-local AdminPage = CreatePage("ADMIN")
+local AdminPage = CreatePage("TEST")
 
 -- =====================================================================
 --  TAB SWITCHING
@@ -593,7 +593,7 @@ end
 AddTabButton("ESP",   "👁 ESP")
 AddTabButton("AIM",   "🎯 AIM")
 AddTabButton("OTHER", "⚙ OTHER")
-AddTabButton("ADMIN", "★ ADMIN")
+AddTabButton("TEST",  "★ TEST")
 
 -- =====================================================================
 --  WIDGET HELPERS
@@ -1076,15 +1076,93 @@ end
 
 saberTrack.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        if swingSaberActive then
-            StopSwingSaber()
-        else
-            StartSwingSaber()
-        end
+        if swingSaberActive then StopSwingSaber() else StartSwingSaber() end
         RefreshSaber()
     end
 end)
 RefreshSaber()
+
+-- helper: build a rapid-fire toggle row (Heartbeat loop)
+local function AddRapidToggle(page, label, order, fn)
+    local active = false
+    local conn   = nil
+
+    local f = MakeCard(page, order)
+
+    local accent = Instance.new("Frame", f)
+    accent.Size             = UDim2.new(0, 3, 0, 18)
+    accent.Position         = UDim2.new(0, 0, 0.5, -9)
+    accent.BackgroundColor3 = B_INACTIVE
+    accent.ZIndex           = 5
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Text                   = label
+    lbl.Size                   = UDim2.new(0.65, 0, 1, 0)
+    lbl.Position               = UDim2.new(0, 12, 0, 0)
+    lbl.Font                   = Enum.Font.GothamBold
+    lbl.TextSize               = 10
+    lbl.TextColor3             = B_TEXT
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment         = Enum.TextXAlignment.Left
+    lbl.ZIndex                 = 5
+
+    local track = Instance.new("Frame", f)
+    track.Size             = UDim2.new(0, 36, 0, 18)
+    track.Position         = UDim2.new(1, -44, 0.5, -9)
+    track.BackgroundColor3 = Color3.fromRGB(10, 22, 50)
+    track.ZIndex           = 5
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+    local knob = Instance.new("Frame", track)
+    knob.Size             = UDim2.new(0, 13, 0, 13)
+    knob.Position         = UDim2.new(0, 2, 0.5, -6)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.ZIndex           = 6
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    local function Refresh()
+        track.BackgroundColor3  = active and B_MID or Color3.fromRGB(10, 22, 50)
+        knob.Position           = active and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
+        accent.BackgroundColor3 = active and B_BLUE or B_INACTIVE
+    end
+
+    track.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            active = not active
+            if active then
+                conn = RunService.Heartbeat:Connect(function()
+                    if not active then return end
+                    pcall(fn)
+                end)
+            else
+                if conn then conn:Disconnect(); conn = nil end
+            end
+            Refresh()
+        end
+    end)
+    Refresh()
+end
+
+AddRapidToggle(AdminPage, "system",  2, function()
+    game:GetService("RobloxReplicatedStorage").RequestDeviceCameraOrientationCapability:FireServer()
+end)
+
+AddRapidToggle(AdminPage, "receive", 3, function()
+    game:GetService("ReplicatedStorage").Modules.Net["RF/ClaimBerry"]:InvokeServer()
+end)
+
+AddRapidToggle(AdminPage, "damage",  4, function()
+    game:GetService("ReplicatedStorage").Modules.Net["RE/RegisterHit"]:FireServer()
+end)
+
+AddRapidToggle(AdminPage, "Pray",    5, function()
+    game:GetService("ReplicatedStorage").Modules.Net["RF/KitsuneStatuePray"]:InvokeServer()
+end)
+
+AddRapidToggle(AdminPage, "money",   6, function()
+    game:GetService("ReplicatedStorage").Remotes.Chest:FireServer()
+end)
 
 -- =====================================================================
 --  ANIMATED STROKE
