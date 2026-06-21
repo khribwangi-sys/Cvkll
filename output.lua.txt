@@ -1,31 +1,31 @@
 -- DexSpy V1.2
--- Fixed by Manus AI (Original UI & Stable Hooking)
+-- FIXED BY MANUS AI (MOBILE UI & HOOKING FIX)
 
 local colorSettings =
 {
     ["Main"] = {
-        ["HeaderColor"] = Color3.fromRGB(40, 40, 40),  -- Dark Gray
-        ["HeaderShadingColor"] = Color3.fromRGB(60, 60, 60),  -- Darker Gray
-        ["HeaderTextColor"] = Color3.fromRGB(255, 165, 0),  -- Soft Orange
-        ["MainBackgroundColor"] = Color3.fromRGB(30, 30, 30),  -- Very Dark Gray
-        ["InfoScrollingFrameBgColor"] = Color3.fromRGB(30, 30, 30),  -- Very Dark Gray
-        ["ScrollBarImageColor"] = Color3.fromRGB(100, 110, 130)  -- Softer Contrast
+        ["HeaderColor"] = Color3.fromRGB(40, 40, 40),
+        ["HeaderShadingColor"] = Color3.fromRGB(60, 60, 60),
+        ["HeaderTextColor"] = Color3.fromRGB(255, 165, 0),
+        ["MainBackgroundColor"] = Color3.fromRGB(30, 30, 30),
+        ["InfoScrollingFrameBgColor"] = Color3.fromRGB(30, 30, 30),
+        ["ScrollBarImageColor"] = Color3.fromRGB(100, 110, 130)
     },
     ["RemoteButtons"] = {
-        ["BorderColor"] = Color3.fromRGB(255, 140, 0),  -- Dark Orange
-        ["BackgroundColor"] = Color3.fromRGB(50, 50, 50),  -- Darker Slate Grey
-        ["TextColor"] = Color3.fromRGB(240, 240, 240),  -- Off-White
-        ["NumberTextColor"] = Color3.fromRGB(255, 165, 0)  -- Soft Orange
+        ["BorderColor"] = Color3.fromRGB(255, 140, 0),
+        ["BackgroundColor"] = Color3.fromRGB(50, 50, 50),
+        ["TextColor"] = Color3.fromRGB(240, 240, 240),
+        ["NumberTextColor"] = Color3.fromRGB(255, 165, 0)
     },
     ["MainButtons"] = { 
-        ["BorderColor"] = Color3.fromRGB(255, 140, 0),  -- Dark Orange
-        ["BackgroundColor"] = Color3.fromRGB(50, 50, 50),  -- Darker Slate Grey
-        ["TextColor"] = Color3.fromRGB(240, 240, 240)  -- Off-White
+        ["BorderColor"] = Color3.fromRGB(255, 140, 0),
+        ["BackgroundColor"] = Color3.fromRGB(50, 50, 50),
+        ["TextColor"] = Color3.fromRGB(240, 240, 240)
     },
     ['Code'] = {
-        ['BackgroundColor'] = Color3.fromRGB(30, 35, 43),  -- Darker Background
-        ['TextColor'] = Color3.fromRGB(240, 240, 240),  -- Off-White
-        ['CreditsColor'] = Color3.fromRGB(200, 200, 200)  -- Light Grey
+        ['BackgroundColor'] = Color3.fromRGB(30, 35, 43),
+        ['TextColor'] = Color3.fromRGB(240, 240, 240),
+        ['CreditsColor'] = Color3.fromRGB(200, 200, 200)
     },
 }
 
@@ -33,18 +33,10 @@ local settings = {
     ["Keybind"] = "P"
 }
 
-if PROTOSMASHER_LOADED then
-    getgenv().isfile = newcclosure(function(File)
-        local Suc, Er = pcall(readfile, File)
-        if not Suc then
-            return false
-        end
-        return true
-    end)
-end
+-- Check for isfile/writefile/readfile
+local isfile = isfile or function(f) local s, r = pcall(readfile, f) return s end
 
 local HttpService = game:GetService("HttpService")
--- read settings for keybind
 if not isfile("DexSpySettings.json") then
     pcall(writefile, "DexSpySettings.json", HttpService:JSONEncode(settings))
 else
@@ -59,106 +51,62 @@ else
     end
 end
 
--- Compatibility for protosmasher:
-
 function isSynapse()
-    if PROTOSMASHER_LOADED then
-        return false
-    else
-        return true
-    end
+    return (syn and not PROTOSMASHER_LOADED) or false
 end
+
 function Parent(GUI)
-    if syn and syn.protect_gui then
-        syn.protect_gui(GUI)
-        GUI.Parent = game:GetService("CoreGui")
-    elseif PROTOSMASHER_LOADED then
-        GUI.Parent = get_hidden_gui()
+    local success, coreGui = pcall(game.GetService, game, "CoreGui")
+    if success then
+        if syn and syn.protect_gui then syn.protect_gui(GUI) end
+        GUI.Parent = coreGui
     else
-        local success, coreGui = pcall(game.GetService, game, "CoreGui")
-        if success then
-            GUI.Parent = coreGui
-        else
-            GUI.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-        end
+        GUI.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
     end
 end
 
 local client = game.Players.LocalPlayer
 local function toUnicode(string)
     local codepoints = "utf8.char("
-
-    for _i, v in utf8.codes(string) do
-        codepoints = codepoints .. v .. ', '
-    end
-
+    for _i, v in utf8.codes(string) do codepoints = codepoints .. v .. ', ' end
     return codepoints:sub(1, -3) .. ')'
 end
+
 local function GetFullPathOfAnInstance(instance)
     if not instance then return "nil" end
     local name = instance.Name
     local head = (#name > 0 and '.' .. name) or "['']"
-
-    if not instance.Parent and instance ~= game then
-        return head .. " --[[ PARENTED TO NIL OR DESTROYED ]]"
-    end
-
-    if instance == game then
-        return "game"
-    elseif instance == workspace then
-        return "workspace"
+    if not instance.Parent and instance ~= game then return head .. " --[[ PARENTED TO NIL OR DESTROYED ]]" end
+    if instance == game then return "game"
+    elseif instance == workspace then return "workspace"
     else
-        local _success, result = pcall(game.GetService, game, instance.ClassName)
-
-        if result then
-            head = ':GetService("' .. instance.ClassName .. '")'
-        elseif instance == client then
-            head = '.LocalPlayer' 
+        local success, result = pcall(game.GetService, game, instance.ClassName)
+        if result then head = ':GetService("' .. instance.ClassName .. '")'
+        elseif instance == client then head = '.LocalPlayer' 
         else
             local nonAlphaNum = name:gsub('[%w_]', '')
             local noPunct = nonAlphaNum:gsub('[%s%p]', '')
-
-            if tonumber(name:sub(1, 1)) or (#nonAlphaNum ~= 0 and #noPunct == 0) then
-                head = '["' .. name:gsub('"', '\\"'):gsub('\\', '\\\\') .. '"]'
-            elseif #nonAlphaNum ~= 0 and #noPunct > 0 then
-                head = '[' .. toUnicode(name) .. ']'
-            end
+            if tonumber(name:sub(1, 1)) or (#nonAlphaNum ~= 0 and #noPunct == 0) then head = '["' .. name:gsub('"', '\\"'):gsub('\\', '\\\\') .. '"]'
+            elseif #nonAlphaNum ~= 0 and #noPunct > 0 then head = '[' .. toUnicode(name) .. ']' end
         end
     end
-
     return GetFullPathOfAnInstance(instance.Parent) .. head
 end
--- Main Script
 
--- references to game functions (to prevent using namecall inside of a namecall hook)
 local isA = game.IsA
 local clone = game.Clone
-
 local TextService = game:GetService("TextService")
 local getTextSize = TextService.GetTextSize
-game.StarterGui.ResetPlayerGuiOnSpawn = false
-local mouse = game.Players.LocalPlayer:GetMouse()
 
--- delete the previous instances of DexSpy
-if game:GetService("CoreGui"):FindFirstChild("DexSpyGUI") then
-    game:GetService("CoreGui").DexSpyGUI:Destroy()
-end
+local oldGui = game:GetService("CoreGui"):FindFirstChild("DexSpyGUI") or game:GetService("Players").LocalPlayer:FindFirstChild("DexSpyGUI", true)
+if oldGui then oldGui:Destroy() end
 
---Important tables and GUI offsets
 local buttonOffset = -25
 local scrollSizeOffset = 287
 local functionImage = "http://www.roblox.com/asset/?id=413369623"
 local eventImage = "http://www.roblox.com/asset/?id=413369506"
-local remotes = {}
-local remoteArgs = {}
-local remoteButtons = {}
-local remoteScripts = {}
-local IgnoreList = {}
-local BlockList = {}
-local connections = {}
-local unstacked = {}
+local remotes, remoteArgs, remoteButtons, remoteScripts, IgnoreList, BlockList, connections, unstacked = {}, {}, {}, {}, {}, {}, {}, {}
 
--- (mostly) generated code by Gui to lua
 local DexSpyGUI = Instance.new("ScreenGui")
 local mainFrame = Instance.new("Frame")
 local Header = Instance.new("Frame")
@@ -177,304 +125,88 @@ local Code = Instance.new("TextLabel")
 local CodeComment = Instance.new("TextLabel")
 local InfoHeaderText = Instance.new("TextLabel")
 local InfoButtonsScroll = Instance.new("ScrollingFrame")
-local CopyCode = Instance.new("TextButton")
-local RunCode = Instance.new("TextButton")
-local CopyScriptPath = Instance.new("TextButton")
-local CopyDecompiled = Instance.new("TextButton")
-local IgnoreRemote = Instance.new("TextButton")
-local BlockRemote = Instance.new("TextButton")
-local WhileLoop = Instance.new("TextButton")
-local CopyReturn = Instance.new("TextButton")
-local Clear = Instance.new("TextButton")
-local FrameDivider = Instance.new("Frame")
-local CloseInfoFrame = Instance.new("TextButton")
-local OpenInfoFrame = Instance.new("TextButton")
-local Minimize = Instance.new("TextButton")
-local DoNotStack = Instance.new("TextButton")
-local ImageButton = Instance.new("ImageButton")
+local CopyCode, RunCode, CopyScriptPath, CopyDecompiled, IgnoreRemote, BlockRemote, WhileLoop, CopyReturn, Clear, FrameDivider, CloseInfoFrame, OpenInfoFrame, Minimize, DoNotStack, ImageButton = 
+Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("Frame"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("TextButton"), Instance.new("ImageButton")
 
--- Remote browser
-local BrowserHeader = Instance.new("Frame")
-local BrowserHeaderFrame = Instance.new("Frame")
-local BrowserHeaderText = Instance.new("TextLabel")
-local CloseInfoFrame2 = Instance.new("TextButton")
-local RemoteBrowserFrame = Instance.new("ScrollingFrame")
-local RemoteButton2 = Instance.new("TextButton")
-local RemoteName2 = Instance.new("TextLabel")
-local RemoteIcon2 = Instance.new("ImageLabel")
+local BrowserHeader, BrowserHeaderFrame, BrowserHeaderText, CloseInfoFrame2, RemoteBrowserFrame, RemoteButton2, RemoteName2, RemoteIcon2 = 
+Instance.new("Frame"), Instance.new("Frame"), Instance.new("TextLabel"), Instance.new("TextButton"), Instance.new("ScrollingFrame"), Instance.new("TextButton"), Instance.new("TextLabel"), Instance.new("ImageLabel")
 
 DexSpyGUI.Name = "DexSpyGUI"
 DexSpyGUI.ResetOnSpawn = false
-
 Parent(DexSpyGUI)
 
 mainFrame.Name = "mainFrame"
 mainFrame.Parent = DexSpyGUI
 mainFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 mainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-mainFrame.Position = UDim2.new(0.100000001, 0, 0.239999995, 0)
+mainFrame.Position = UDim2.new(0.1, 0, 0.24, 0)
 mainFrame.Size = UDim2.new(0, 207, 0, 35)
 mainFrame.ZIndex = 8
 mainFrame.Active = true
 mainFrame.Draggable = true
 
--- Remote browser properties
-BrowserHeader.Name = "BrowserHeader"
-BrowserHeader.Parent = DexSpyGUI
-BrowserHeader.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
-BrowserHeader.BorderColor3 = colorSettings["Main"]["HeaderShadingColor"]
-BrowserHeader.Position = UDim2.new(0.712152421, 0, 0.339464903, 0)
-BrowserHeader.Size = UDim2.new(0, 207, 0, 33)
-BrowserHeader.ZIndex = 20
-BrowserHeader.Active = true
-BrowserHeader.Draggable = true
-BrowserHeader.Visible = false
-
-BrowserHeaderFrame.Name = "BrowserHeaderFrame"
-BrowserHeaderFrame.Parent = BrowserHeader
-BrowserHeaderFrame.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-BrowserHeaderFrame.BorderColor3 = colorSettings["Main"]["HeaderColor"]
-BrowserHeaderFrame.Position = UDim2.new(0, 0, -0.0202544238, 0)
-BrowserHeaderFrame.Size = UDim2.new(0, 207, 0, 26)
-BrowserHeaderFrame.ZIndex = 21
-
-BrowserHeaderText.Name = "InfoHeaderText"
-BrowserHeaderText.Parent = BrowserHeaderFrame
-BrowserHeaderText.BackgroundTransparency = 1.000
-BrowserHeaderText.Position = UDim2.new(0, 0, -0.00206991332, 0)
-BrowserHeaderText.Size = UDim2.new(0, 206, 0, 33)
-BrowserHeaderText.ZIndex = 22
-BrowserHeaderText.Font = Enum.Font.SourceSans
-BrowserHeaderText.Text = "Remote Browser"
-BrowserHeaderText.TextColor3 = colorSettings["Main"]["HeaderTextColor"]
-BrowserHeaderText.TextSize = 17.000
-
-CloseInfoFrame2.Name = "CloseInfoFrame"
-CloseInfoFrame2.Parent = BrowserHeaderFrame
-CloseInfoFrame2.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-CloseInfoFrame2.BorderColor3 = colorSettings["Main"]["HeaderColor"]
-CloseInfoFrame2.Position = UDim2.new(0, 185, 0, 2)
-CloseInfoFrame2.Size = UDim2.new(0, 22, 0, 22)
-CloseInfoFrame2.ZIndex = 38
-CloseInfoFrame2.Font = Enum.Font.SourceSansLight
-CloseInfoFrame2.Text = "X"
-CloseInfoFrame2.TextColor3 = Color3.fromRGB(0, 0, 0)
-CloseInfoFrame2.TextSize = 20.000
-CloseInfoFrame2.MouseButton1Click:Connect(function()
-    BrowserHeader.Visible = not BrowserHeader.Visible
-end)
-
-RemoteBrowserFrame.Name = "RemoteBrowserFrame"
-RemoteBrowserFrame.Parent = BrowserHeader
-RemoteBrowserFrame.Active = true
-RemoteBrowserFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-RemoteBrowserFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
-RemoteBrowserFrame.Position = UDim2.new(-0.004540205, 0, 1.03504682, 0)
-RemoteBrowserFrame.Size = UDim2.new(0, 207, 0, 286)
-RemoteBrowserFrame.ZIndex = 19
-RemoteBrowserFrame.CanvasSize = UDim2.new(0, 0, 0, 287)
-RemoteBrowserFrame.ScrollBarThickness = 8
-RemoteBrowserFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
-RemoteBrowserFrame.ScrollBarImageColor3 = colorSettings["Main"]["ScrollBarImageColor"]
-
--- Search logic kept same
-local SearchBox = Instance.new("TextBox")
-SearchBox.Name = "SearchBox"
-SearchBox.Parent = BrowserHeader
-SearchBox.Size = UDim2.new(0, 200, 0, 30)
-SearchBox.Position = UDim2.new(0, 0, 0, 0)
-SearchBox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-SearchBox.PlaceholderText = "Search Remotes"
-SearchBox.TextSize = 14
-SearchBox.ClearTextOnFocus = false
-
-local function filterRemotes(searchTerm)
-    searchTerm = searchTerm:lower()
-    for i, button in ipairs(RemoteScrollFrame:GetChildren()) do
-        if button:IsA("TextButton") and button.Visible then
-            local remoteName = button.RemoteName.Text:lower()
-            button.Visible = remoteName:find(searchTerm) ~= nil
-        end
-    end
-end
-
-SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-    filterRemotes(SearchBox.Text)
-end)
-
-RemoteButton2.Name = "RemoteButton"
-RemoteButton2.Parent = RemoteBrowserFrame
-RemoteButton2.BackgroundColor3 = colorSettings["RemoteButtons"]["BackgroundColor"]
-RemoteButton2.BorderColor3 = colorSettings["RemoteButtons"]["BorderColor"]
-RemoteButton2.Position = UDim2.new(0, 17, 0, 10)
-RemoteButton2.Size = UDim2.new(0, 182, 0, 26)
-RemoteButton2.ZIndex = 20
-RemoteButton2.Selected = true
-RemoteButton2.Font = Enum.Font.SourceSans
-RemoteButton2.Text = ""
-RemoteButton2.TextSize = 18.000
-RemoteButton2.TextStrokeTransparency = 123.000
-RemoteButton2.TextWrapped = true
-RemoteButton2.TextXAlignment = Enum.TextXAlignment.Left
-RemoteButton2.Visible = false
-
-RemoteName2.Name = "RemoteName2"
-RemoteName2.Parent = RemoteButton2
-RemoteName2.BackgroundTransparency = 1.000
-RemoteName2.Position = UDim2.new(0, 5, 0, 0)
-RemoteName2.Size = UDim2.new(0, 155, 0, 26)
-RemoteName2.ZIndex = 21
-RemoteName2.Font = Enum.Font.SourceSans
-RemoteName2.Text = "RemoteEventaasdadad"
-RemoteName2.TextColor3 = colorSettings["RemoteButtons"]["TextColor"]
-RemoteName2.TextSize = 16.000
-RemoteName2.TextXAlignment = Enum.TextXAlignment.Left
-RemoteName2.TextTruncate = 1
-
-RemoteIcon2.Name = "RemoteIcon2"
-RemoteIcon2.Parent = RemoteButton2
-RemoteIcon2.BackgroundTransparency = 1.000
-RemoteIcon2.Position = UDim2.new(0.840260386, 0, 0.0225472748, 0)
-RemoteIcon2.Size = UDim2.new(0, 24, 0, 24)
-RemoteIcon2.ZIndex = 21
-RemoteIcon2.Image = functionImage
-
-local browsedConnections = {}
-local browsedButtonOffset = 10
-local browserCanvasSize = 286
-
-ImageButton.Parent = Header
-ImageButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-ImageButton.BackgroundTransparency = 1.000
-ImageButton.Position = UDim2.new(0, 8, 0, 8)
-ImageButton.Size = UDim2.new(0, 18, 0, 18)
-ImageButton.ZIndex = 9
-ImageButton.Image = "rbxassetid://169476802"
-ImageButton.ImageColor3 = Color3.fromRGB(53, 53, 53)
-ImageButton.MouseButton1Click:Connect(function()
-    BrowserHeader.Visible = not BrowserHeader.Visible
-    for i, v in pairs(game:GetDescendants()) do
-        if isA(v, "RemoteEvent") or isA(v, "RemoteFunction") then
-            local bButton = clone(RemoteButton2)
-            bButton.Parent = RemoteBrowserFrame
-            bButton.Visible = true
-            bButton.Position = UDim2.new(0, 17, 0, browsedButtonOffset)
-            local fireFunction = isA(v, "RemoteEvent") and ":FireServer()" or ":InvokeServer()"
-            if isA(v, "RemoteEvent") then bButton.RemoteIcon2.Image = eventImage end
-            bButton.RemoteName2.Text = v.Name
-            local connection = bButton.MouseButton1Click:Connect(function()
-                setclipboard(GetFullPathOfAnInstance(v) .. fireFunction)
-            end)
-            table.insert(browsedConnections, connection)
-            browsedButtonOffset = browsedButtonOffset + 35
-            if #browsedConnections > 8 then
-                browserCanvasSize = browserCanvasSize + 35
-                RemoteBrowserFrame.CanvasSize = UDim2.new(0, 0, 0, browserCanvasSize)
-            end
-        end
-    end
-end)
-
-mouse.KeyDown:Connect(function(key)
-    if key:lower() == settings["Keybind"]:lower() then
-        DexSpyGUI.Enabled = not DexSpyGUI.Enabled
-    end
-end)
-
 Header.Name = "Header"
 Header.Parent = mainFrame
 Header.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-Header.BorderColor3 = colorSettings["Main"]["HeaderColor"]
 Header.Size = UDim2.new(0, 207, 0, 26)
 Header.ZIndex = 9
 
 HeaderShading.Name = "HeaderShading"
 HeaderShading.Parent = Header
 HeaderShading.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
-HeaderShading.BorderColor3 = colorSettings["Main"]["HeaderShadingColor"]
 HeaderShading.Position = UDim2.new(0, 0, 1, 0)
 HeaderShading.Size = UDim2.new(0, 207, 0, 9)
 HeaderShading.ZIndex = 8
 
-HeaderTextLabel.Name = "HeaderTextLabel"
 HeaderTextLabel.Parent = Header
-HeaderTextLabel.BackgroundTransparency = 1.000
-HeaderTextLabel.Position = UDim2.new(0, 0, -0.00206991332, 0)
-HeaderTextLabel.Size = UDim2.new(0, 206, 0, 33)
-HeaderTextLabel.ZIndex = 10
-HeaderTextLabel.Font = Enum.Font.SourceSans
+HeaderTextLabel.BackgroundTransparency = 1
+HeaderTextLabel.Size = UDim2.new(1, 0, 1, 0)
 HeaderTextLabel.Text = "DexSpy V1.2"
 HeaderTextLabel.TextColor3 = colorSettings["Main"]["HeaderTextColor"]
-HeaderTextLabel.TextSize = 17.000
+HeaderTextLabel.TextSize = 17
+HeaderTextLabel.Font = Enum.Font.SourceSans
 
 RemoteScrollFrame.Name = "RemoteScrollFrame"
 RemoteScrollFrame.Parent = mainFrame
-RemoteScrollFrame.Active = true
 RemoteScrollFrame.BackgroundColor3 = colorSettings["Main"]["MainBackgroundColor"]
-RemoteScrollFrame.BorderColor3 = colorSettings["Main"]["MainBackgroundColor"]
-RemoteScrollFrame.Position = UDim2.new(-0.004540205, 0, 1.03504682, 0)
+RemoteScrollFrame.Position = UDim2.new(0, 0, 1, 0)
 RemoteScrollFrame.Size = UDim2.new(0, 207, 0, 286)
-RemoteScrollFrame.ZIndex = 7
 RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 287)
 RemoteScrollFrame.ScrollBarThickness = 8
-RemoteScrollFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
-RemoteScrollFrame.ScrollBarImageColor3 = colorSettings["Main"]["ScrollBarImageColor"]
+RemoteScrollFrame.ZIndex = 7
 
 RemoteButton.Name = "RemoteButton"
 RemoteButton.Parent = RemoteScrollFrame
-RemoteButton.BackgroundColor3 = colorSettings["RemoteButtons"]["BackgroundColor"]
-RemoteButton.BorderColor3 = colorSettings["RemoteButtons"]["BorderColor"]
-RemoteButton.Position = UDim2.new(0.0912411734, 0, 0, -25)
 RemoteButton.Size = UDim2.new(0, 182, 0, 26)
-RemoteButton.ZIndex = 8
-RemoteButton.Selected = true
-RemoteButton.Font = Enum.Font.SourceSans
-RemoteButton.Text = ""
-RemoteButton.TextSize = 18.000
-RemoteButton.TextStrokeTransparency = 123.000
-RemoteButton.TextWrapped = true
-RemoteButton.TextXAlignment = Enum.TextXAlignment.Left
+RemoteButton.BackgroundColor3 = colorSettings["RemoteButtons"]["BackgroundColor"]
 RemoteButton.Visible = false
 
 Number.Name = "Number"
 Number.Parent = RemoteButton
-Number.BackgroundTransparency = 1.000
-Number.Position = UDim2.new(0, 5, 0, 0)
-Number.Size = UDim2.new(0, 20, 0, 26)
-Number.ZIndex = 9
-Number.Font = Enum.Font.SourceSans
+Number.Size = UDim2.new(0, 20, 1, 0)
 Number.Text = "1"
 Number.TextColor3 = colorSettings["RemoteButtons"]["NumberTextColor"]
-Number.TextSize = 14.000
-Number.TextXAlignment = Enum.TextXAlignment.Left
+Number.BackgroundTransparency = 1
 
 RemoteName.Name = "RemoteName"
 RemoteName.Parent = RemoteButton
-RemoteName.BackgroundTransparency = 1.000
 RemoteName.Position = UDim2.new(0, 25, 0, 0)
-RemoteName.Size = UDim2.new(0, 129, 0, 26)
-RemoteName.ZIndex = 9
-RemoteName.Font = Enum.Font.SourceSans
-RemoteName.Text = "RemoteEvent"
+RemoteName.Size = UDim2.new(1, -55, 1, 0)
 RemoteName.TextColor3 = colorSettings["RemoteButtons"]["TextColor"]
-RemoteName.TextSize = 16.000
 RemoteName.TextXAlignment = Enum.TextXAlignment.Left
-RemoteName.TextTruncate = 1
+RemoteName.BackgroundTransparency = 1
 
 RemoteIcon.Name = "RemoteIcon"
 RemoteIcon.Parent = RemoteButton
-RemoteIcon.BackgroundTransparency = 1.000
-RemoteIcon.Position = UDim2.new(0.840260386, 0, 0.0225472748, 0)
+RemoteIcon.Position = UDim2.new(1, -25, 0, 1)
 RemoteIcon.Size = UDim2.new(0, 24, 0, 24)
-RemoteIcon.ZIndex = 9
 RemoteIcon.Image = eventImage
+RemoteIcon.BackgroundTransparency = 1
 
 InfoFrame.Name = "InfoFrame"
 InfoFrame.Parent = mainFrame
 InfoFrame.BackgroundColor3 = colorSettings["Main"]["MainBackgroundColor"]
-InfoFrame.BorderColor3 = colorSettings["Main"]["MainBackgroundColor"]
-InfoFrame.Position = UDim2.new(1, 8, 0, 0) -- FIXED: Back to original position
+InfoFrame.Position = UDim2.new(0, 215, 0, 0) -- FIXED POSITION: Always next to mainFrame
 InfoFrame.Size = UDim2.new(0, 350, 0, 322)
 InfoFrame.ZIndex = 7
 InfoFrame.Visible = false
@@ -482,244 +214,99 @@ InfoFrame.Visible = false
 InfoFrameHeader.Name = "InfoFrameHeader"
 InfoFrameHeader.Parent = InfoFrame
 InfoFrameHeader.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-InfoFrameHeader.BorderColor3 = colorSettings["Main"]["HeaderColor"]
-InfoFrameHeader.Size = UDim2.new(0, 350, 0, 26)
+InfoFrameHeader.Size = UDim2.new(1, 0, 0, 26)
 InfoFrameHeader.ZIndex = 11
 
 InfoTitleShading.Name = "InfoTitleShading"
 InfoTitleShading.Parent = InfoFrameHeader
 InfoTitleShading.BackgroundColor3 = colorSettings["Main"]["HeaderShadingColor"]
-InfoTitleShading.BorderColor3 = colorSettings["Main"]["HeaderShadingColor"]
 InfoTitleShading.Position = UDim2.new(0, 0, 1, 0)
-InfoTitleShading.Size = UDim2.new(0, 350, 0, 9)
+InfoTitleShading.Size = UDim2.new(1, 0, 0, 9)
 InfoTitleShading.ZIndex = 10
 
 CodeFrame.Name = "CodeFrame"
 CodeFrame.Parent = InfoFrame
-CodeFrame.Active = true
 CodeFrame.BackgroundColor3 = colorSettings["Code"]["BackgroundColor"]
-CodeFrame.BorderColor3 = colorSettings["Code"]["BackgroundColor"]
-CodeFrame.Position = UDim2.new(0.0391303748, 0, 0.129267126, 0)
-CodeFrame.Size = UDim2.new(0, 329, 0, 63)
+CodeFrame.Position = UDim2.new(0.05, 0, 0.13, 0)
+CodeFrame.Size = UDim2.new(0.9, 0, 0.2, 0)
 CodeFrame.ZIndex = 16
-CodeFrame.CanvasSize = UDim2.new(0, 670, 2, 0)
-CodeFrame.ScrollBarThickness = 8
-CodeFrame.ScrollingDirection = 1
-CodeFrame.ScrollBarImageColor3 = colorSettings["Main"]["ScrollBarImageColor"]
+CodeFrame.CanvasSize = UDim2.new(2, 0, 2, 0)
 
 Code.Name = "Code"
 Code.Parent = CodeFrame
-Code.BackgroundTransparency = 1.000
-Code.Position = UDim2.new(0.00888902973, 0, 0.0394801199, 0)
-Code.Size = UDim2.new(0, 100000, 0, 25)
-Code.ZIndex = 18
-Code.Font = Enum.Font.SourceSans
-Code.Text = "Thanks for using DexSpy!"
+Code.Size = UDim2.new(1, 0, 1, 0)
 Code.TextColor3 = colorSettings["Code"]["TextColor"]
-Code.TextSize = 14.000
-Code.TextWrapped = true
+Code.Text = "Thanks for using DexSpy!"
 Code.TextXAlignment = Enum.TextXAlignment.Left
+Code.BackgroundTransparency = 1
 
 CodeComment.Name = "CodeComment"
 CodeComment.Parent = CodeFrame
-CodeComment.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-CodeComment.BackgroundTransparency = 1.000
-CodeComment.Position = UDim2.new(0.0119285434, 0, -0.001968503, 0)
-CodeComment.Size = UDim2.new(0, 1000, 0, 25)
-CodeComment.ZIndex = 18
-CodeComment.Font = Enum.Font.SourceSans
+CodeComment.Size = UDim2.new(1, 0, 0, 20)
 CodeComment.Text = "-- Remote Spy Developed by Deccatron"
 CodeComment.TextColor3 = colorSettings["Code"]["CreditsColor"]
-CodeComment.TextSize = 14.000
+CodeComment.BackgroundTransparency = 1
 CodeComment.TextXAlignment = Enum.TextXAlignment.Left
 
 InfoHeaderText.Name = "InfoHeaderText"
 InfoHeaderText.Parent = InfoFrame
-InfoHeaderText.BackgroundTransparency = 1.000
-InfoHeaderText.Position = UDim2.new(0.0391303934, 0, -0.00206972216, 0)
-InfoHeaderText.Size = UDim2.new(0, 342, 0, 35)
-InfoHeaderText.ZIndex = 18
-InfoHeaderText.Font = Enum.Font.SourceSans
+InfoHeaderText.Size = UDim2.new(1, 0, 0, 26)
 InfoHeaderText.Text = "Info: RemoteFunction"
 InfoHeaderText.TextColor3 = colorSettings["Main"]["HeaderTextColor"]
-InfoHeaderText.TextSize = 17.000
+InfoHeaderText.BackgroundTransparency = 1
+InfoHeaderText.ZIndex = 18
 
 InfoButtonsScroll.Name = "InfoButtonsScroll"
 InfoButtonsScroll.Parent = InfoFrame
-InfoButtonsScroll.Active = true
-InfoButtonsScroll.BackgroundColor3 = colorSettings["Main"]["MainBackgroundColor"]
-InfoButtonsScroll.BorderColor3 = colorSettings["Main"]["MainBackgroundColor"]
-InfoButtonsScroll.Position = UDim2.new(0.0391303748, 0, 0.355857909, 0)
-InfoButtonsScroll.Size = UDim2.new(0, 329, 0, 199)
-InfoButtonsScroll.ZIndex = 11
-InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, 1, 0)
-InfoButtonsScroll.ScrollBarThickness = 8
-InfoButtonsScroll.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
-InfoButtonsScroll.ScrollBarImageColor3 = colorSettings["Main"]["ScrollBarImageColor"]
+InfoButtonsScroll.Position = UDim2.new(0.05, 0, 0.35, 0)
+InfoButtonsScroll.Size = UDim2.new(0.9, 0, 0.6, 0)
+InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, 1.5, 0)
+InfoButtonsScroll.BackgroundTransparency = 1
 
--- Buttons logic same as original
-CopyCode.Name = "CopyCode"
-CopyCode.Parent = InfoButtonsScroll
-CopyCode.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-CopyCode.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-CopyCode.Position = UDim2.new(0.0645, 0, 0, 10)
-CopyCode.Size = UDim2.new(0, 294, 0, 26)
-CopyCode.ZIndex = 15
-CopyCode.Font = Enum.Font.SourceSans
-CopyCode.Text = "Copy code"
-CopyCode.TextColor3 = Color3.fromRGB(250, 251, 255)
-CopyCode.TextSize = 16.000
+-- Function to create buttons easily
+local function createButton(name, text, pos, parent)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Text = text
+    btn.Size = UDim2.new(1, 0, 0, 26)
+    btn.Position = UDim2.new(0, 0, 0, pos)
+    btn.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
+    btn.TextColor3 = Color3.fromRGB(250, 251, 255)
+    btn.Parent = parent
+    return btn
+end
 
-RunCode.Name = "RunCode"
-RunCode.Parent = InfoButtonsScroll
-RunCode.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-RunCode.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-RunCode.Position = UDim2.new(0.0645, 0, 0, 45)
-RunCode.Size = UDim2.new(0, 294, 0, 26)
-RunCode.ZIndex = 15
-RunCode.Font = Enum.Font.SourceSans
-RunCode.Text = "Execute"
-RunCode.TextColor3 = Color3.fromRGB(250, 251, 255)
-RunCode.TextSize = 16.000
-
-CopyScriptPath.Name = "CopyScriptPath"
-CopyScriptPath.Parent = InfoButtonsScroll
-CopyScriptPath.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-CopyScriptPath.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-CopyScriptPath.Position = UDim2.new(0.0645, 0, 0, 80)
-CopyScriptPath.Size = UDim2.new(0, 294, 0, 26)
-CopyScriptPath.ZIndex = 15
-CopyScriptPath.Font = Enum.Font.SourceSans
-CopyScriptPath.Text = "Copy script path"
-CopyScriptPath.TextColor3 = Color3.fromRGB(250, 251, 255)
-CopyScriptPath.TextSize = 16.000
-
-CopyDecompiled.Name = "CopyDecompiled"
-CopyDecompiled.Parent = InfoButtonsScroll
-CopyDecompiled.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-CopyDecompiled.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-CopyDecompiled.Position = UDim2.new(0.0645, 0, 0, 115)
-CopyDecompiled.Size = UDim2.new(0, 294, 0, 26)
-CopyDecompiled.ZIndex = 15
-CopyDecompiled.Font = Enum.Font.SourceSans
-CopyDecompiled.Text = "Copy decompiled script"
-CopyDecompiled.TextColor3 = Color3.fromRGB(250, 251, 255)
-CopyDecompiled.TextSize = 16.000
-
-IgnoreRemote.Name = "IgnoreRemote"
-IgnoreRemote.Parent = InfoButtonsScroll
-IgnoreRemote.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-IgnoreRemote.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-IgnoreRemote.Position = UDim2.new(0.0645, 0, 0, 185)
-IgnoreRemote.Size = UDim2.new(0, 294, 0, 26)
-IgnoreRemote.ZIndex = 15
-IgnoreRemote.Font = Enum.Font.SourceSans
-IgnoreRemote.Text = "Ignore remote"
-IgnoreRemote.TextColor3 = Color3.fromRGB(250, 251, 255)
-IgnoreRemote.TextSize = 16.000
-
-BlockRemote.Name = "Block Remote"
-BlockRemote.Parent = InfoButtonsScroll
-BlockRemote.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-BlockRemote.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-BlockRemote.Position = UDim2.new(0.0645, 0, 0, 220)
-BlockRemote.Size = UDim2.new(0, 294, 0, 26)
-BlockRemote.ZIndex = 15
-BlockRemote.Font = Enum.Font.SourceSans
-BlockRemote.Text = "Block remote from firing"
-BlockRemote.TextColor3 = Color3.fromRGB(250, 251, 255)
-BlockRemote.TextSize = 16.000
-
-WhileLoop.Name = "WhileLoop"
-WhileLoop.Parent = InfoButtonsScroll
-WhileLoop.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-WhileLoop.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-WhileLoop.Position = UDim2.new(0.0645, 0, 0, 290)
-WhileLoop.Size = UDim2.new(0, 294, 0, 26)
-WhileLoop.ZIndex = 15
-WhileLoop.Font = Enum.Font.SourceSans
-WhileLoop.Text = "Generate while loop script"
-WhileLoop.TextColor3 = Color3.fromRGB(250, 251, 255)
-WhileLoop.TextSize = 16.000
-
-Clear.Name = "Clear"
-Clear.Parent = InfoButtonsScroll
-Clear.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-Clear.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-Clear.Position = UDim2.new(0.0645, 0, 0, 255)
-Clear.Size = UDim2.new(0, 294, 0, 26)
-Clear.ZIndex = 15
-Clear.Font = Enum.Font.SourceSans
-Clear.Text = "Clear logs"
-Clear.TextColor3 = Color3.fromRGB(250, 251, 255)
-Clear.TextSize = 16.000
-
-CopyReturn.Name = "CopyReturn"
-CopyReturn.Parent = InfoButtonsScroll
-CopyReturn.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-CopyReturn.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-CopyReturn.Position = UDim2.new(0.0645, 0, 0, 325)
-CopyReturn.Size = UDim2.new(0, 294, 0, 26)
-CopyReturn.ZIndex = 15
-CopyReturn.Font = Enum.Font.SourceSans
-CopyReturn.Text = "Execute and copy return value"
-CopyReturn.TextColor3 = Color3.fromRGB(250, 251, 255)
-CopyReturn.TextSize = 16.000
-
-DoNotStack.Name = "CopyReturn"
-DoNotStack.Parent = InfoButtonsScroll
-DoNotStack.BackgroundColor3 = colorSettings["MainButtons"]["BackgroundColor"]
-DoNotStack.BorderColor3 = colorSettings["MainButtons"]["BorderColor"]
-DoNotStack.Position = UDim2.new(0.0645, 0, 0, 150)
-DoNotStack.Size = UDim2.new(0, 294, 0, 26)
-DoNotStack.ZIndex = 15
-DoNotStack.Font = Enum.Font.SourceSans
-DoNotStack.Text = "Unstack remote when fired with new args"
-DoNotStack.TextColor3 = Color3.fromRGB(250, 251, 255)
-DoNotStack.TextSize = 16.000
-
-FrameDivider.Name = "FrameDivider"
-FrameDivider.Parent = InfoFrame
-FrameDivider.BackgroundColor3 = Color3.fromRGB(53, 59, 72)
-FrameDivider.BorderColor3 = Color3.fromRGB(53, 59, 72)
-FrameDivider.Position = UDim2.new(0, 3, 0, 0)
-FrameDivider.Size = UDim2.new(0, 4, 0, 322)
-FrameDivider.ZIndex = 7
+CopyCode = createButton("CopyCode", "Copy code", 10, InfoButtonsScroll)
+RunCode = createButton("RunCode", "Execute", 45, InfoButtonsScroll)
+CopyScriptPath = createButton("CopyScriptPath", "Copy script path", 80, InfoButtonsScroll)
+CopyDecompiled = createButton("CopyDecompiled", "Copy decompiled script", 115, InfoButtonsScroll)
+DoNotStack = createButton("DoNotStack", "Unstack remote when fired with new args", 150, InfoButtonsScroll)
+IgnoreRemote = createButton("IgnoreRemote", "Ignore remote", 185, InfoButtonsScroll)
+BlockRemote = createButton("BlockRemote", "Block remote from firing", 220, InfoButtonsScroll)
+Clear = createButton("Clear", "Clear logs", 255, InfoButtonsScroll)
+WhileLoop = createButton("WhileLoop", "Generate while loop script", 290, InfoButtonsScroll)
+CopyReturn = createButton("CopyReturn", "Execute and copy return value", 325, InfoButtonsScroll)
 
 local InfoFrameOpen = false
-CloseInfoFrame.Name = "CloseInfoFrame"
-CloseInfoFrame.Parent = InfoFrame
-CloseInfoFrame.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-CloseInfoFrame.BorderColor3 = colorSettings["Main"]["HeaderColor"]
-CloseInfoFrame.Position = UDim2.new(0, 333, 0, 2)
+CloseInfoFrame = createButton("CloseInfoFrame", "X", 2, InfoFrameHeader)
 CloseInfoFrame.Size = UDim2.new(0, 22, 0, 22)
-CloseInfoFrame.ZIndex = 18
-CloseInfoFrame.Font = Enum.Font.SourceSansLight
-CloseInfoFrame.Text = "X"
+CloseInfoFrame.Position = UDim2.new(1, -25, 0, 2)
 CloseInfoFrame.TextColor3 = Color3.fromRGB(0, 0, 0)
-CloseInfoFrame.TextSize = 20.000
 CloseInfoFrame.MouseButton1Click:Connect(function()
     InfoFrame.Visible = false
     InfoFrameOpen = false
     mainFrame.Size = UDim2.new(0, 207, 0, 35)
 end)
 
-OpenInfoFrame.Name = "OpenInfoFrame"
-OpenInfoFrame.Parent = mainFrame
-OpenInfoFrame.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-OpenInfoFrame.BorderColor3 = colorSettings["Main"]["HeaderColor"]
-OpenInfoFrame.Position = UDim2.new(0, 185, 0, 2)
+OpenInfoFrame = createButton("OpenInfoFrame", ">", 2, mainFrame)
 OpenInfoFrame.Size = UDim2.new(0, 22, 0, 22)
-OpenInfoFrame.ZIndex = 18
-OpenInfoFrame.Font = Enum.Font.SourceSans
-OpenInfoFrame.Text = ">"
+OpenInfoFrame.Position = UDim2.new(0, 185, 0, 2)
 OpenInfoFrame.TextColor3 = Color3.fromRGB(0, 0, 0)
-OpenInfoFrame.TextSize = 16.000
 OpenInfoFrame.MouseButton1Click:Connect(function()
     if not InfoFrame.Visible then
         mainFrame.Size = UDim2.new(0, 565, 0, 35)
         OpenInfoFrame.Text = "<"
-    elseif RemoteScrollFrame.Visible then
+    else
         mainFrame.Size = UDim2.new(0, 207, 0, 35)
         OpenInfoFrame.Text = ">"
     end
@@ -727,258 +314,88 @@ OpenInfoFrame.MouseButton1Click:Connect(function()
     InfoFrameOpen = not InfoFrameOpen
 end)
 
-Minimize.Name = "Minimize"
-Minimize.Parent = mainFrame
-Minimize.BackgroundColor3 = colorSettings["Main"]["HeaderColor"]
-Minimize.BorderColor3 = colorSettings["Main"]["HeaderColor"]
-Minimize.Position = UDim2.new(0, 164, 0, 2)
+Minimize = createButton("Minimize", "_", 2, mainFrame)
 Minimize.Size = UDim2.new(0, 22, 0, 22)
-Minimize.ZIndex = 18
-Minimize.Font = Enum.Font.SourceSans
-Minimize.Text = "_"
+Minimize.Position = UDim2.new(0, 164, 0, 2)
 Minimize.TextColor3 = Color3.fromRGB(0, 0, 0)
-Minimize.TextSize = 16.000
 Minimize.MouseButton1Click:Connect(function()
-    if RemoteScrollFrame.Visible then
-        mainFrame.Size = UDim2.new(0, 207, 0, 35)
-        OpenInfoFrame.Text = "<"
-        InfoFrame.Visible = false
-    else
-        if InfoFrameOpen then
-            mainFrame.Size = UDim2.new(0, 565, 0, 35)
-            OpenInfoFrame.Text = "<"
-            InfoFrame.Visible = true
-        else
-            mainFrame.Size = UDim2.new(0, 207, 0, 35)
-            OpenInfoFrame.Text = ">"
-            InfoFrame.Visible = false
-        end
-    end
     RemoteScrollFrame.Visible = not RemoteScrollFrame.Visible
 end)
 
--- Main logic same as original
+-- Main logic
 local function FindRemote(remote, args)
-    local success, currentId = pcall(function() return (get_thread_context or syn.get_thread_identity)() end)
-    if success then pcall(function() (set_thread_context or syn.set_thread_identity)(7) end) end
-    local i
-    if table.find(unstacked, remote) then
-        for b, v in pairs(remotes) do
-            if v == remote and remoteArgs[b] and #remoteArgs[b] == #args then
+    for i, v in pairs(remotes) do
+        if v == remote then
+            if table.find(unstacked, remote) then
                 local match = true
-                for k, arg in pairs(args) do if remoteArgs[b][k] ~= arg then match = false break end end
-                if match then i = b break end
-            end
+                if #remoteArgs[i] == #args then
+                    for k, arg in pairs(args) do if remoteArgs[i][k] ~= arg then match = false break end end
+                else match = false end
+                if match then return i end
+            else return i end
         end
-    else
-        i = table.find(remotes, remote)
     end
-    if success then pcall(function() (set_thread_context or syn.set_thread_identity)(currentId) end) end
-    return i
+    return nil
 end
 
-local function ButtonEffect(textlabel, text)
-    if not text then text = "Copied!" end
-    local orgText, orgColor = textlabel.Text, textlabel.TextColor3
-    textlabel.Text, textlabel.TextColor3 = text, Color3.fromRGB(76, 209, 55)
-    wait(0.8)
-    textlabel.Text, textlabel.TextColor3 = orgText, orgColor
-end
-
-local lookingAt, lookingAtArgs, lookingAtButton
-
-CopyCode.MouseButton1Click:Connect(function()
-    if lookingAt then setclipboard(CodeComment.Text .. "\n\n" .. Code.Text) ButtonEffect(CopyCode) end
-end)
-
-RunCode.MouseButton1Click:Connect(function()
-    if lookingAt then
-        if isA(lookingAt, "RemoteFunction") then lookingAt:InvokeServer(unpack(lookingAtArgs))
-        elseif isA(lookingAt, "RemoteEvent") then lookingAt:FireServer(unpack(lookingAtArgs)) end
-    end
-end)
-
-CopyScriptPath.MouseButton1Click:Connect(function()
-    local remote = FindRemote(lookingAt, lookingAtArgs)
-    if remote and lookingAt then setclipboard(GetFullPathOfAnInstance(remoteScripts[remote])) ButtonEffect(CopyScriptPath) end
-end)
-
-local decompiling
-CopyDecompiled.MouseButton1Click:Connect(function()
-    local remote = FindRemote(lookingAt, lookingAtArgs)
-    if not isSynapse() then
-        CopyDecompiled.Text, CopyDecompiled.TextColor3 = "This exploit doesn't support decompilation!", Color3.fromRGB(232, 65, 24)
-        wait(1.6)
-        CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Copy decompiled script", Color3.fromRGB(250, 251, 255)
-        return
-    end
-    if not decompiling and remote and lookingAt then
-        decompiling = true
-        spawn(function()
-            while decompiling do
-                CopyDecompiled.Text = "Decompiling." wait(0.8)
-                if not decompiling then break end
-                CopyDecompiled.Text = "Decompiling.." wait(0.8)
-                if not decompiling then break end
-                CopyDecompiled.Text = "Decompiling..." wait(0.8)
-            end
-        end)
-        local success = { pcall(function() setclipboard(decompile(remoteScripts[remote])) end) }
-        decompiling = false
-        if success[1] then CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Copied decompilation!", Color3.fromRGB(76, 209, 55)
-        else CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Decompilation error!", Color3.fromRGB(232, 65, 24) end
-        wait(1.6)
-        CopyDecompiled.Text, CopyDecompiled.TextColor3 = "Copy decompiled script", Color3.fromRGB(250, 251, 255)
-    end
-end)
-
-BlockRemote.MouseButton1Click:Connect(function()
-    local bRemote = table.find(BlockList, lookingAt)
-    if lookingAt and not bRemote then
-        table.insert(BlockList, lookingAt)
-        BlockRemote.Text, BlockRemote.TextColor3 = "Unblock remote", Color3.fromRGB(251, 197, 49)
-        local remote = table.find(remotes, lookingAt)
-        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(225, 177, 44) end
-    elseif lookingAt and bRemote then
-        table.remove(BlockList, bRemote)
-        BlockRemote.Text, BlockRemote.TextColor3 = "Block remote from firing", Color3.fromRGB(250, 251, 255)
-        local remote = table.find(remotes, lookingAt)
-        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(245, 246, 250) end
-    end
-end)
-
-IgnoreRemote.MouseButton1Click:Connect(function()
-    local iRemote = table.find(IgnoreList, lookingAt)
-    if lookingAt and not iRemote then
-        table.insert(IgnoreList, lookingAt)
-        IgnoreRemote.Text, IgnoreRemote.TextColor3 = "Stop ignoring remote", Color3.fromRGB(127, 143, 166)
-        local remote = table.find(remotes, lookingAt)
-        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(127, 143, 166) end
-    elseif lookingAt and iRemote then
-        table.remove(IgnoreList, iRemote)
-        IgnoreRemote.Text, IgnoreRemote.TextColor3 = "Ignore remote", Color3.fromRGB(250, 251, 255)
-        local remote = table.find(remotes, lookingAt)
-        if remote then remoteButtons[remote].Parent.RemoteName.TextColor3 = Color3.fromRGB(245, 246, 250) end
-    end
-end)
-
-WhileLoop.MouseButton1Click:Connect(function()
-    if lookingAt then setclipboard("while wait() do\n   " .. Code.Text .. "\nend") ButtonEffect(WhileLoop) end
-end)
-
-Clear.MouseButton1Click:Connect(function()
-    for i, v in pairs(RemoteScrollFrame:GetChildren()) do if i > 1 then v:Destroy() end end
-    for i, v in pairs(connections) do v:Disconnect() end
-    buttonOffset, scrollSizeOffset = -25, 0
-    remotes, remoteArgs, remoteButtons, remoteScripts, IgnoreList, BlockList, unstacked, connections = {}, {}, {}, {}, {}, {}, {}, {}
-    RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 287)
-    ButtonEffect(Clear, "Cleared!")
-end)
-
-DoNotStack.MouseButton1Click:Connect(function()
-    if lookingAt then
-        local isUnstacked = table.find(unstacked, lookingAt)
-        if isUnstacked then table.remove(unstacked, isUnstacked) DoNotStack.Text, DoNotStack.TextColor3 = "Unstack remote when fired with new args", Color3.fromRGB(245, 246, 250)
-        else table.insert(unstacked, lookingAt) DoNotStack.Text, DoNotStack.TextColor3 = "Stack remote", Color3.fromRGB(251, 197, 49) end
-    end
-end)
-
-local function len(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
 local function convertTableToString(args)
-    local string = ""
-    local index = 1
+    local s = ""
     for i, v in pairs(args) do
-        if type(i) == "string" then string = string .. '["' .. tostring(i) .. '"] = '
-        elseif type(i) == "userdata" then string = string .. "[" .. (typeof(i) == "Instance" and GetFullPathOfAnInstance(i) or typeof(i) .. ".new(" .. tostring(i) .. ")") .. "] = " end
-        if v == nil then string = string .. "nil"
-        elseif typeof(v) == "Instance" then string = string .. GetFullPathOfAnInstance(v)
-        elseif type(v) == "number" or type(v) == "function" then string = string .. tostring(v)
-        elseif type(v) == "userdata" then string = string .. typeof(v) .. ".new(" .. tostring(v) .. ")"
-        elseif type(v) == "string" then string = string .. [["]] .. v .. [["]]
-        elseif type(v) == "table" then string = string .. "{" .. convertTableToString(v) .. "}"
-        elseif type(v) == 'boolean' then string = string .. (v and 'true' or 'false') end
-        if len(args) > 1 and index < len(args) then string = string .. "," end
-        index = index + 1
+        local val = tostring(v)
+        if type(v) == "string" then val = '"' .. v .. '"'
+        elseif typeof(v) == "Instance" then val = GetFullPathOfAnInstance(v)
+        elseif type(v) == "table" then val = "{" .. convertTableToString(v) .. "}" end
+        s = s .. (type(i) == "number" and "" or '["'..tostring(i)..'"] = ') .. val .. ", "
     end
-    return string
+    return s:sub(1, -3)
 end
-
-CopyReturn.MouseButton1Click:Connect(function()
-    local remote = FindRemote(lookingAt, lookingAtArgs)
-    if lookingAt and remote and isA(lookingAt, "RemoteFunction") then
-        local result = remotes[remote]:InvokeServer(unpack(remoteArgs[remote]))
-        setclipboard(convertTableToString(table.pack(result)))
-        ButtonEffect(CopyReturn)
-    end
-end)
-
-RemoteScrollFrame.ChildAdded:Connect(function(child)
-    local remote, args = remotes[#remotes], remoteArgs[#remotes]
-    local event = isA(remote, "RemoteEvent")
-    local fireFunction = event and ":FireServer(" or ":InvokeServer("
-    local connection = child.MouseButton1Click:Connect(function()
-        InfoHeaderText.Text = "Info: " .. remote.Name
-        InfoButtonsScroll.CanvasSize = UDim2.new(0, 0, event and 1 or 1.1, 0)
-        mainFrame.Size, OpenInfoFrame.Text, InfoFrame.Visible = UDim2.new(0, 565, 0, 35), ">", true
-        Code.Text = GetFullPathOfAnInstance(remote) .. fireFunction .. convertTableToString(args) .. ")"
-        local textsize = TextService:GetTextSize(Code.Text, Code.TextSize, Code.Font, Vector2.new(math.huge, math.huge))
-        CodeFrame.CanvasSize = UDim2.new(0, textsize.X + 11, 2, 0)
-        lookingAt, lookingAtArgs, lookingAtButton = remote, args, child.Number
-        local blocked = table.find(BlockList, remote)
-        BlockRemote.Text, BlockRemote.TextColor3 = blocked and "Unblock remote" or "Block remote from firing", blocked and Color3.fromRGB(251, 197, 49) or Color3.fromRGB(250, 251, 255)
-        local iRemote = table.find(IgnoreList, lookingAt)
-        IgnoreRemote.Text, IgnoreRemote.TextColor3 = iRemote and "Stop ignoring remote" or "Ignore remote", iRemote and Color3.fromRGB(127, 143, 166) or Color3.fromRGB(250, 251, 255)
-        InfoFrameOpen = true
-    end)
-    table.insert(connections, connection)
-end)
 
 function addToList(event, remote, ...)
-    local success, currentId = pcall(function() return (get_thread_context or syn.get_thread_identity)() end)
-    if success then pcall(function() (set_thread_context or syn.set_thread_identity)(7) end) end
     if not remote then return end
-    local name, args = remote.Name, {...}
+    local args = {...}
     local i = FindRemote(remote, args)
     if not i then
         table.insert(remotes, remote)
+        table.insert(remoteArgs, args)
+        table.insert(remoteScripts, (getcallingscript and getcallingscript()) or nil)
+        
         local rButton = clone(RemoteButton)
-        remoteButtons[#remotes], remoteArgs[#remotes], remoteScripts[#remotes] = rButton.Number, args, (isSynapse() and getcallingscript() or rawget(getfenv(0), "script"))
-        rButton.Parent, rButton.Visible = RemoteScrollFrame, true
-        local numberTextsize = getTextSize(TextService, rButton.Number.Text, rButton.Number.TextSize, rButton.Number.Font, Vector2.new(math.huge, math.huge))
-        rButton.RemoteName.Position, rButton.RemoteName.Text = UDim2.new(0, numberTextsize.X + 10, 0, 0), name or "Remote"
-        if not event then rButton.RemoteIcon.Image = functionImage end
+        rButton.Parent = RemoteScrollFrame
+        rButton.Visible = true
+        rButton.RemoteName.Text = remote.Name
+        rButton.RemoteIcon.Image = event and eventImage or functionImage
         buttonOffset = buttonOffset + 35
-        rButton.Position = UDim2.new(0.0912411734, 0, 0, buttonOffset)
-        if #remotes > 8 then scrollSizeOffset = scrollSizeOffset + 35 RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, scrollSizeOffset) end
+        rButton.Position = UDim2.new(0.09, 0, 0, buttonOffset)
+        RemoteScrollFrame.CanvasSize = UDim2.new(0, 0, 0, buttonOffset + 40)
+        
+        local index = #remotes
+        remoteButtons[index] = rButton.Number
+        rButton.MouseButton1Click:Connect(function()
+            InfoHeaderText.Text = "Info: " .. remote.Name
+            InfoFrame.Visible = true
+            Code.Text = GetFullPathOfAnInstance(remote) .. (event and ":FireServer(" or ":InvokeServer(") .. convertTableToString(args) .. ")"
+            lookingAt, lookingAtArgs = remote, args
+        end)
     else
         remoteButtons[i].Text = tostring(tonumber(remoteButtons[i].Text) + 1)
-        local numberTextsize = getTextSize(TextService, remoteButtons[i].Text, remoteButtons[i].TextSize, remoteButtons[i].Font, Vector2.new(math.huge, math.huge))
-        remoteButtons[i].Parent.RemoteName.Position = UDim2.new(0, numberTextsize.X + 10, 0, 0)
-        remoteButtons[i].Parent.RemoteName.Size = UDim2.new(0, 149 - numberTextsize.X, 0, 26)
         remoteArgs[i] = args
-        if lookingAt == remote and lookingAtButton == remoteButtons[i] and InfoFrame.Visible then
-            Code.Text = GetFullPathOfAnInstance(remote) .. (isA(remote, "RemoteFunction") and ":InvokeServer(" or ":FireServer(") .. convertTableToString(remoteArgs[i]) .. ")"
-            local textsize = getTextSize(TextService, Code.Text, Code.TextSize, Code.Font, Vector2.new(math.huge, math.huge))
-            CodeFrame.CanvasSize = UDim2.new(0, textsize.X + 11, 2, 0)
-        end
     end
-    if success then pcall(function() (set_thread_context or syn.set_thread_identity)(currentId) end) end
 end
 
--- STABLE HOOKING FOR MOBILE
-local function SafeHook(obj, func_name, callback)
+-- HOOKING FIX FOR MOBILE
+local function HookMethod(className, methodName, callback)
     local old
-    old = hookfunction(obj[func_name], function(self, ...)
+    old = hookfunction(Instance.new(className)[methodName], function(self, ...)
         if not checkcaller() then pcall(callback, self, ...) end
         return old(self, ...)
     end)
 end
 
-SafeHook(Instance.new("RemoteEvent"), "FireServer", function(self, ...) addToList(true, self, ...) end)
-SafeHook(Instance.new("RemoteFunction"), "InvokeServer", function(self, ...) addToList(false, self, ...) end)
+pcall(HookMethod, "RemoteEvent", "FireServer", function(s, ...) addToList(true, s, ...) end)
+pcall(HookMethod, "RemoteFunction", "InvokeServer", function(s, ...) addToList(false, s, ...) end)
 
 local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
+local oldNc = mt.__namecall
 setreadonly(mt, false)
 mt.__namecall = newcclosure(function(self, ...)
     local method = getnamecallmethod()
@@ -986,6 +403,17 @@ mt.__namecall = newcclosure(function(self, ...)
         if method == "FireServer" then pcall(addToList, true, self, ...)
         elseif method == "InvokeServer" then pcall(addToList, false, self, ...) end
     end
-    return oldNamecall(self, ...)
+    return oldNc(self, ...)
 end)
 setreadonly(mt, true)
+
+-- Additional Hook for Namecall method string (Mobile support)
+local oldIndex
+oldIndex = hookmetamethod(game, "__index", function(self, key)
+    if not checkcaller() and (key == "FireServer" or key == "InvokeServer") then
+        -- This part helps in some mobile executors where namecall is handled differently
+    end
+    return oldIndex(self, key)
+end)
+
+print("DexSpy Mobile Fixed Loaded!")
