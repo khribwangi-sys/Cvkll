@@ -438,17 +438,6 @@ HeaderLine.BackgroundTransparency = 0.2
 HeaderLine.ZIndex                 = 4
 Instance.new("UICorner", HeaderLine).CornerRadius = UDim.new(1, 0)
 
-local VerLabel = Instance.new("TextLabel", Header)
-VerLabel.Text                   = "v4.1"
-VerLabel.Size                   = UDim2.new(0, 60, 1, 0)
-VerLabel.Position               = UDim2.new(0, 10, 0, 0)
-VerLabel.TextColor3             = B_MUTED
-VerLabel.Font                   = Enum.Font.GothamBold
-VerLabel.TextSize               = 10
-VerLabel.BackgroundTransparency = 1
-VerLabel.TextXAlignment         = Enum.TextXAlignment.Left
-VerLabel.TextYAlignment         = Enum.TextYAlignment.Center
-VerLabel.ZIndex                 = 4
 
 -- close button  (white / neutral, no red)
 local CloseBtn = Instance.new("TextButton", Header)
@@ -1144,25 +1133,6 @@ local function AddRapidToggle(page, label, order, fn)
     Refresh()
 end
 
-AddRapidToggle(AdminPage, "system",  2, function()
-    game:GetService("RobloxReplicatedStorage").RequestDeviceCameraOrientationCapability:FireServer()
-end)
-
-AddRapidToggle(AdminPage, "receive", 3, function()
-    game:GetService("ReplicatedStorage").Modules.Net["RF/ClaimBerry"]:InvokeServer()
-end)
-
-AddRapidToggle(AdminPage, "damage",  4, function()
-    game:GetService("ReplicatedStorage").Modules.Net["RE/RegisterHit"]:FireServer()
-end)
-
-AddRapidToggle(AdminPage, "Pray",    5, function()
-    game:GetService("ReplicatedStorage").Modules.Net["RF/KitsuneStatuePray"]:InvokeServer()
-end)
-
-AddRapidToggle(AdminPage, "money",   6, function()
-    game:GetService("ReplicatedStorage").Remotes.Chest:FireServer()
-end)
 
 -- =====================================================================
 --  ANIMATED STROKE
