@@ -616,16 +616,8 @@ Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 22)
 -- =====================================================================
 local Header = Instance.new("Frame", MainFrame)
 Header.Size                   = UDim2.new(1, 0, 0, 46)
-Header.BackgroundColor3       = W_HEADER
-Header.BackgroundTransparency = 0
+Header.BackgroundTransparency = 1
 Header.ZIndex                 = 6
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 18)
-
-local HeaderFix = Instance.new("Frame", Header)
-HeaderFix.Size             = UDim2.new(1, 0, 0.5, 0)
-HeaderFix.Position         = UDim2.new(0, 0, 0.5, 0)
-HeaderFix.BackgroundColor3 = W_HEADER
-HeaderFix.ZIndex           = 6
 
 
 local TitleLabel = Instance.new("TextLabel", Header)
