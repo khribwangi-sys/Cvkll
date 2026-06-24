@@ -1135,6 +1135,10 @@ end
 
 
 
+AddRapidToggle(AdminPage, "Coin", 2, function()
+    game:GetService("ReplicatedStorage").Remotes.CoinCollect:FireServer()
+end)
+
 -- =====================================================================
 --  ANIMATED STROKE
 -- =====================================================================
