@@ -8,15 +8,72 @@ local Settings = {
 local RunService       = game:GetService("RunService")
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local HttpService      = game:GetService("HttpService")
+local TweenService     = game:GetService("TweenService")
 local LocalPlayer      = Players.LocalPlayer
 local Camera           = game.Workspace.CurrentCamera
 
+-- =====================================================================
+--  KEY SYSTEM
+-- =====================================================================
+local CONNECT_URL = "http://shop.dflzx.xyz/connect"
+local KEY_FILE    = "ax_hwid.dat"
+
+local keyValid   = false
+local keyExpiry  = "—"
+local savedKey   = ""
+
+local function GetHWID()
+    local ok, id = pcall(function()
+        return tostring(game:GetService("RbxAnalyticsService"):GetClientId())
+    end)
+    return ok and id or tostring(LocalPlayer.UserId)
+end
+
+local function LoadKey()
+    local ok, data = pcall(readfile, KEY_FILE)
+    if ok and data and #data > 4 then return data end
+    return ""
+end
+
+local function SaveKey(k)
+    pcall(writefile, KEY_FILE, k)
+end
+
+local function VerifyKey(inputKey, callback)
+    task.spawn(function()
+        local ok, resp = pcall(function()
+            return HttpService:RequestAsync({
+                Url    = CONNECT_URL,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body   = HttpService:JSONEncode({
+                    key  = inputKey,
+                    hwid = GetHWID()
+                })
+            })
+        end)
+        if ok and resp and resp.Success then
+            local data = {}
+            pcall(function() data = HttpService:JSONDecode(resp.Body) end)
+            local valid = data.valid or data.success or (data.status == "ok") or false
+            local expiry = data.expiry or data.expire or data.expires or "—"
+            callback(valid, expiry)
+        else
+            callback(false, "—")
+        end
+    end)
+end
+
+-- =====================================================================
+--  AUTO-COLOR CYCLE
+-- =====================================================================
 local AutoColors = {
-    Color3.fromRGB(0,   160, 255),
-    Color3.fromRGB(60,  100, 255),
-    Color3.fromRGB(0,   200, 255),
-    Color3.fromRGB(100, 60,  255),
-    Color3.fromRGB(0,   230, 200),
+    Color3.fromRGB(59,  130, 246),
+    Color3.fromRGB(37,  99,  235),
+    Color3.fromRGB(99,  160, 255),
+    Color3.fromRGB(30,  80,  220),
+    Color3.fromRGB(80,  170, 255),
 }
 local autoColorIndex   = 1
 local autoColorTimer   = 0
@@ -31,6 +88,9 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
+-- =====================================================================
+--  SILENT AIM
+-- =====================================================================
 local oldIndex
 oldIndex = hookmetamethod(game, "__index", function(self, key)
     if Settings.Aim.SilentAim and typeof(self) == "Instance" and self:IsA("Mouse") and key == "Hit" then
@@ -53,6 +113,9 @@ oldIndex = hookmetamethod(game, "__index", function(self, key)
     return oldIndex(self, key)
 end)
 
+-- =====================================================================
+--  HITBOX EXPANDER
+-- =====================================================================
 RunService.RenderStepped:Connect(function()
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
@@ -71,6 +134,9 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- =====================================================================
+--  ATTRACT PLAYERS
+-- =====================================================================
 local attractBodyVelocities = {}
 
 local function CleanAttract(player)
@@ -139,6 +205,9 @@ end)
 
 Players.PlayerRemoving:Connect(function(p) CleanAttract(p) end)
 
+-- =====================================================================
+--  FLY
+-- =====================================================================
 local flyBV   = nil
 local flyBG   = nil
 local flyConn = nil
@@ -207,6 +276,9 @@ LocalPlayer.CharacterAdded:Connect(function()
     if Settings.Other.Fly then task.wait(1); StartFly() end
 end)
 
+-- =====================================================================
+--  ESP
+-- =====================================================================
 local espConnections = {}
 local espDrawings    = {}
 
@@ -374,19 +446,23 @@ end)
 Players.PlayerRemoving:Connect(function(p) DestroyESP(p) end)
 
 -- =====================================================================
---  COLOUR PALETTE
+--  COLOUR PALETTE  —  CLEAN WHITE
 -- =====================================================================
-local B_BLUE    = Color3.fromRGB(0,   150, 255)
-local B_BRIGHT  = Color3.fromRGB(80,  200, 255)
-local B_MID     = Color3.fromRGB(0,   110, 220)
-local B_DARK    = Color3.fromRGB(0,   50,  140)
-local B_INACTIVE= Color3.fromRGB(15,  35,  80)
-local B_TEXT    = Color3.fromRGB(200, 225, 255)
-local B_MUTED   = Color3.fromRGB(80,  120, 180)
-local B_CARD    = Color3.fromRGB(3,   7,   22)
-local B_STROKE  = Color3.fromRGB(10,  28,  80)
-local B_TRACK   = Color3.fromRGB(5,   12,  40)
-local B_BG      = Color3.fromRGB(2,   5,   18)
+local W_BG       = Color3.fromRGB(255, 255, 255)
+local W_SURFACE  = Color3.fromRGB(248, 249, 253)
+local W_CARD     = Color3.fromRGB(252, 253, 255)
+local W_HEADER   = Color3.fromRGB(250, 251, 255)
+local W_SIDEBAR  = Color3.fromRGB(244, 246, 252)
+local W_STROKE   = Color3.fromRGB(214, 220, 236)
+local W_STROKE2  = Color3.fromRGB(190, 200, 225)
+local W_TEXT     = Color3.fromRGB(18,  22,  42)
+local W_MUTED    = Color3.fromRGB(100, 112, 148)
+local W_ACCENT   = Color3.fromRGB(59,  130, 246)
+local W_ACCENT2  = Color3.fromRGB(37,  99,  235)
+local W_INACTIVE = Color3.fromRGB(200, 210, 228)
+local W_TRACK    = Color3.fromRGB(226, 230, 242)
+local W_ON       = Color3.fromRGB(59,  130, 246)
+local W_ON_DARK  = Color3.fromRGB(29,  78,  216)
 
 -- =====================================================================
 --  SCREENGUI
@@ -394,106 +470,212 @@ local B_BG      = Color3.fromRGB(2,   5,   18)
 local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 ScreenGui.Name         = "AX"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 99
+
+-- =====================================================================
+--  TOGGLE BUTTON  ("01")
+-- =====================================================================
+local ToggleBtn = Instance.new("TextButton", ScreenGui)
+ToggleBtn.Size                   = UDim2.new(0, 52, 0, 52)
+ToggleBtn.Position               = UDim2.new(0.88, 0, 0.12, 0)
+ToggleBtn.Text                   = "01"
+ToggleBtn.Font                   = Enum.Font.GothamBold
+ToggleBtn.TextSize               = 16
+ToggleBtn.TextColor3             = W_ACCENT
+ToggleBtn.BackgroundColor3       = W_BG
+ToggleBtn.BackgroundTransparency = 0
+ToggleBtn.Active                 = true
+ToggleBtn.Draggable              = true
+ToggleBtn.ZIndex                 = 10
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+local ToggleStroke = Instance.new("UIStroke", ToggleBtn)
+ToggleStroke.Color     = W_ACCENT
+ToggleStroke.Thickness = 2
+
+-- =====================================================================
+--  LOGIN FRAME
+-- =====================================================================
+local LoginFrame = Instance.new("Frame", ScreenGui)
+LoginFrame.Size                   = UDim2.new(0, 360, 0, 220)
+LoginFrame.Position               = UDim2.new(0.5, -180, 0.5, -110)
+LoginFrame.BackgroundColor3       = W_BG
+LoginFrame.BackgroundTransparency = 0
+LoginFrame.Visible                = false
+LoginFrame.ZIndex                 = 20
+Instance.new("UICorner", LoginFrame).CornerRadius = UDim.new(0, 18)
+local LoginStroke = Instance.new("UIStroke", LoginFrame)
+LoginStroke.Color     = W_ACCENT
+LoginStroke.Thickness = 2
+
+local LoginHeader = Instance.new("Frame", LoginFrame)
+LoginHeader.Size                   = UDim2.new(1, 0, 0, 54)
+LoginHeader.BackgroundColor3       = W_ACCENT
+LoginHeader.BackgroundTransparency = 0
+LoginHeader.ZIndex                 = 21
+Instance.new("UICorner", LoginHeader).CornerRadius = UDim.new(0, 18)
+
+local LoginHeaderFix = Instance.new("Frame", LoginHeader)
+LoginHeaderFix.Size             = UDim2.new(1, 0, 0.5, 0)
+LoginHeaderFix.Position         = UDim2.new(0, 0, 0.5, 0)
+LoginHeaderFix.BackgroundColor3 = W_ACCENT
+LoginHeaderFix.ZIndex           = 21
+
+local LoginTitle = Instance.new("TextLabel", LoginHeader)
+LoginTitle.Text                   = "ACCESS KEY"
+LoginTitle.Size                   = UDim2.new(1, 0, 1, 0)
+LoginTitle.Font                   = Enum.Font.GothamBold
+LoginTitle.TextSize               = 15
+LoginTitle.TextColor3             = Color3.fromRGB(255, 255, 255)
+LoginTitle.BackgroundTransparency = 1
+LoginTitle.ZIndex                 = 22
+
+local LoginSub = Instance.new("TextLabel", LoginFrame)
+LoginSub.Text                   = "Enter your license key to continue"
+LoginSub.Size                   = UDim2.new(1, -30, 0, 24)
+LoginSub.Position               = UDim2.new(0, 15, 0, 62)
+LoginSub.Font                   = Enum.Font.Gotham
+LoginSub.TextSize               = 11
+LoginSub.TextColor3             = W_MUTED
+LoginSub.BackgroundTransparency = 1
+LoginSub.ZIndex                 = 21
+
+local LoginBox = Instance.new("TextBox", LoginFrame)
+LoginBox.Size                   = UDim2.new(1, -30, 0, 38)
+LoginBox.Position               = UDim2.new(0, 15, 0, 94)
+LoginBox.PlaceholderText        = "XXXX-XXXX-XXXX-XXXX"
+LoginBox.Text                   = ""
+LoginBox.Font                   = Enum.Font.GothamBold
+LoginBox.TextSize               = 13
+LoginBox.TextColor3             = W_TEXT
+LoginBox.PlaceholderColor3      = W_INACTIVE
+LoginBox.BackgroundColor3       = W_SURFACE
+LoginBox.BackgroundTransparency = 0
+LoginBox.ClearTextOnFocus       = false
+LoginBox.ZIndex                 = 22
+Instance.new("UICorner", LoginBox).CornerRadius = UDim.new(0, 10)
+local LBStroke = Instance.new("UIStroke", LoginBox)
+LBStroke.Color     = W_STROKE2
+LBStroke.Thickness = 1.5
+local LBPad = Instance.new("UIPadding", LoginBox)
+LBPad.PaddingLeft  = UDim.new(0, 12)
+LBPad.PaddingRight = UDim.new(0, 12)
+
+local LoginStatus = Instance.new("TextLabel", LoginFrame)
+LoginStatus.Text                   = ""
+LoginStatus.Size                   = UDim2.new(1, -30, 0, 18)
+LoginStatus.Position               = UDim2.new(0, 15, 0, 138)
+LoginStatus.Font                   = Enum.Font.Gotham
+LoginStatus.TextSize               = 11
+LoginStatus.TextColor3             = Color3.fromRGB(220, 50, 50)
+LoginStatus.BackgroundTransparency = 1
+LoginStatus.ZIndex                 = 21
+
+local LoginBtn = Instance.new("TextButton", LoginFrame)
+LoginBtn.Text                   = "VERIFY"
+LoginBtn.Size                   = UDim2.new(1, -30, 0, 38)
+LoginBtn.Position               = UDim2.new(0, 15, 0, 162)
+LoginBtn.Font                   = Enum.Font.GothamBold
+LoginBtn.TextSize               = 13
+LoginBtn.TextColor3             = Color3.fromRGB(255, 255, 255)
+LoginBtn.BackgroundColor3       = W_ACCENT
+LoginBtn.BackgroundTransparency = 0
+LoginBtn.ZIndex                 = 22
+Instance.new("UICorner", LoginBtn).CornerRadius = UDim.new(0, 10)
 
 -- =====================================================================
 --  MAIN FRAME
 -- =====================================================================
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size                   = UDim2.new(0, 440, 0, 340)
-MainFrame.Position               = UDim2.new(0.5, -220, 0.5, -170)
-MainFrame.BackgroundColor3       = B_BG
-MainFrame.BackgroundTransparency = 0.82
+MainFrame.Size                   = UDim2.new(0, 450, 0, 350)
+MainFrame.Position               = UDim2.new(0.5, -225, 0.5, -175)
+MainFrame.BackgroundColor3       = W_BG
+MainFrame.BackgroundTransparency = 0
 MainFrame.Visible                = false
 MainFrame.Active                 = true
 MainFrame.Draggable              = true
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
-
+MainFrame.ZIndex                 = 5
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 18)
 local MainStroke = Instance.new("UIStroke", MainFrame)
-MainStroke.Thickness       = 1.5
+MainStroke.Thickness       = 2
+MainStroke.Color           = W_STROKE2
 MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
-local BgGrad = Instance.new("UIGradient", MainFrame)
-BgGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0,   Color3.fromRGB(4,  10, 30)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(2,  6,  18)),
-    ColorSequenceKeypoint.new(1,   Color3.fromRGB(4,  10, 30)),
-})
-BgGrad.Rotation = 135
+-- Drop shadow layer
+local Shadow = Instance.new("Frame", ScreenGui)
+Shadow.Size                   = UDim2.new(0, 470, 0, 370)
+Shadow.Position               = UDim2.new(0.5, -235, 0.5, -182)
+Shadow.BackgroundColor3       = Color3.fromRGB(18, 22, 60)
+Shadow.BackgroundTransparency = 0.88
+Shadow.Visible                = false
+Shadow.ZIndex                 = 4
+Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 22)
 
 -- =====================================================================
---  HEADER  (no logo, no MENU text)
+--  HEADER
 -- =====================================================================
 local Header = Instance.new("Frame", MainFrame)
-Header.Size                   = UDim2.new(1, 0, 0, 38)
-Header.BackgroundColor3       = Color3.fromRGB(4, 10, 30)
-Header.BackgroundTransparency = 0.50
-Header.ZIndex                 = 3
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 16)
+Header.Size                   = UDim2.new(1, 0, 0, 46)
+Header.BackgroundColor3       = W_HEADER
+Header.BackgroundTransparency = 0
+Header.ZIndex                 = 6
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 18)
+
+local HeaderFix = Instance.new("Frame", Header)
+HeaderFix.Size             = UDim2.new(1, 0, 0.5, 0)
+HeaderFix.Position         = UDim2.new(0, 0, 0.5, 0)
+HeaderFix.BackgroundColor3 = W_HEADER
+HeaderFix.ZIndex           = 6
 
 local HeaderLine = Instance.new("Frame", Header)
-HeaderLine.Size                   = UDim2.new(1, -20, 0, 1)
-HeaderLine.Position               = UDim2.new(0, 10, 1, -1)
-HeaderLine.BackgroundColor3       = B_BLUE
-HeaderLine.BackgroundTransparency = 0.2
-HeaderLine.ZIndex                 = 4
+HeaderLine.Size                   = UDim2.new(1, -24, 0, 1)
+HeaderLine.Position               = UDim2.new(0, 12, 1, -1)
+HeaderLine.BackgroundColor3       = W_STROKE
+HeaderLine.BackgroundTransparency = 0
+HeaderLine.ZIndex                 = 7
 Instance.new("UICorner", HeaderLine).CornerRadius = UDim.new(1, 0)
 
+local TitleLabel = Instance.new("TextLabel", Header)
+TitleLabel.Text                   = "AX"
+TitleLabel.Size                   = UDim2.new(0, 80, 1, 0)
+TitleLabel.Position               = UDim2.new(0, 18, 0, 0)
+TitleLabel.Font                   = Enum.Font.GothamBold
+TitleLabel.TextSize               = 16
+TitleLabel.TextColor3             = W_ACCENT
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
+TitleLabel.ZIndex                 = 7
 
--- close button  (white / neutral, no red)
 local CloseBtn = Instance.new("TextButton", Header)
-CloseBtn.Text                   = "X"
-CloseBtn.Size                   = UDim2.new(0, 28, 0, 28)
-CloseBtn.Position               = UDim2.new(1, -34, 0.5, -14)
+CloseBtn.Text                   = "×"
+CloseBtn.Size                   = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position               = UDim2.new(1, -38, 0.5, -15)
 CloseBtn.Font                   = Enum.Font.GothamBold
-CloseBtn.TextColor3             = Color3.fromRGB(200, 220, 255)
-CloseBtn.TextSize               = 12
-CloseBtn.BackgroundColor3       = Color3.fromRGB(10, 24, 60)
-CloseBtn.BackgroundTransparency = 0.20
-CloseBtn.ZIndex                 = 5
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 7)
+CloseBtn.TextColor3             = W_MUTED
+CloseBtn.TextSize               = 18
+CloseBtn.BackgroundColor3       = W_SURFACE
+CloseBtn.BackgroundTransparency = 0
+CloseBtn.ZIndex                 = 8
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 local CloseStroke = Instance.new("UIStroke", CloseBtn)
-CloseStroke.Color     = B_STROKE
+CloseStroke.Color     = W_STROKE
 CloseStroke.Thickness = 1
-
--- =====================================================================
---  TOGGLE BUTTON  (image)
--- =====================================================================
-local ToggleBtn = Instance.new("ImageButton", ScreenGui)
-ToggleBtn.Size                   = UDim2.new(0, 54, 0, 54)
-ToggleBtn.Position               = UDim2.new(0.88, 0, 0.12, 0)
-ToggleBtn.Image                  = "rbxassetid://111495954394141"
-ToggleBtn.ScaleType              = Enum.ScaleType.Fit
-ToggleBtn.BackgroundColor3       = B_BG
-ToggleBtn.BackgroundTransparency = 0.20
-ToggleBtn.Active                 = true
-ToggleBtn.Draggable              = true
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
-local ToggleStroke = Instance.new("UIStroke", ToggleBtn)
-ToggleStroke.Thickness = 1.5
-
-ToggleBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-end)
-CloseBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = false
-end)
 
 -- =====================================================================
 --  SIDEBAR
 -- =====================================================================
 local Sidebar = Instance.new("Frame", MainFrame)
-Sidebar.Size                   = UDim2.new(0, 94, 1, -44)
-Sidebar.Position               = UDim2.new(0, 4, 0, 40)
-Sidebar.BackgroundColor3       = Color3.fromRGB(3, 7, 22)
-Sidebar.BackgroundTransparency = 0.50
-Sidebar.ZIndex                 = 3
-Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 12)
-local SidebarGrad = Instance.new("UIGradient", Sidebar)
-SidebarGrad.Color    = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(5, 12, 38)), ColorSequenceKeypoint.new(1, Color3.fromRGB(2, 6, 18)) })
-SidebarGrad.Rotation = 90
+Sidebar.Size                   = UDim2.new(0, 96, 1, -54)
+Sidebar.Position               = UDim2.new(0, 6, 0, 48)
+Sidebar.BackgroundColor3       = W_SIDEBAR
+Sidebar.BackgroundTransparency = 0
+Sidebar.ZIndex                 = 6
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 14)
+local SidebarStroke = Instance.new("UIStroke", Sidebar)
+SidebarStroke.Color     = W_STROKE
+SidebarStroke.Thickness = 1
 
 local SidebarList = Instance.new("UIListLayout", Sidebar)
-SidebarList.Padding             = UDim.new(0, 4)
+SidebarList.Padding             = UDim.new(0, 5)
 SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 SidebarList.VerticalAlignment   = Enum.VerticalAlignment.Top
 local SidebarPad = Instance.new("UIPadding", Sidebar)
@@ -503,30 +685,30 @@ SidebarPad.PaddingTop = UDim.new(0, 8)
 --  CONTENT CONTAINER
 -- =====================================================================
 local Container = Instance.new("Frame", MainFrame)
-Container.Size                   = UDim2.new(1, -108, 1, -46)
-Container.Position               = UDim2.new(0, 104, 0, 42)
+Container.Size                   = UDim2.new(1, -114, 1, -54)
+Container.Position               = UDim2.new(0, 108, 0, 50)
 Container.BackgroundTransparency = 1
 Container.ClipsDescendants       = true
-Container.ZIndex                 = 3
+Container.ZIndex                 = 6
 
 local Pages = {}
 local function CreatePage(tabName)
     local page = Instance.new("ScrollingFrame", Container)
-    page.Size                 = UDim2.new(1, 0, 1, 0)
+    page.Size                   = UDim2.new(1, 0, 1, 0)
     page.BackgroundTransparency = 1
-    page.AutomaticCanvasSize  = Enum.AutomaticSize.Y
-    page.CanvasSize           = UDim2.new(0, 0, 0, 0)
-    page.ScrollBarThickness   = 3
-    page.ScrollBarImageColor3 = B_BLUE
-    page.ScrollingDirection   = Enum.ScrollingDirection.Y
-    page.Visible              = false
-    page.ZIndex               = 3
+    page.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+    page.CanvasSize             = UDim2.new(0, 0, 0, 0)
+    page.ScrollBarThickness     = 3
+    page.ScrollBarImageColor3   = W_ACCENT
+    page.ScrollingDirection     = Enum.ScrollingDirection.Y
+    page.Visible                = false
+    page.ZIndex                 = 6
     local layout = Instance.new("UIListLayout", page)
-    layout.Padding   = UDim.new(0, 4)
+    layout.Padding   = UDim.new(0, 5)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     local pad = Instance.new("UIPadding", page)
-    pad.PaddingTop   = UDim.new(0, 4)
-    pad.PaddingRight = UDim.new(0, 6)
+    pad.PaddingTop   = UDim.new(0, 6)
+    pad.PaddingRight = UDim.new(0, 8)
     Pages[tabName] = page
     return page
 end
@@ -535,9 +717,10 @@ local EspPage   = CreatePage("ESP")
 local AimPage   = CreatePage("AIM")
 local OtherPage = CreatePage("OTHER")
 local AdminPage = CreatePage("TEST")
+local InfoPage  = CreatePage("INFO")
 
 -- =====================================================================
---  TAB SWITCHING
+--  TAB SWITCHING  (with smooth slide animation)
 -- =====================================================================
 local TabButtons = {}
 local function SwitchTab(tabName)
@@ -547,56 +730,62 @@ local function SwitchTab(tabName)
     end
     for name, btn in pairs(TabButtons) do
         if name == tabName then
-            btn.BackgroundColor3 = B_DARK
-            btn.TextColor3       = Color3.fromRGB(255, 255, 255)
+            TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = W_ACCENT,
+                TextColor3       = Color3.fromRGB(255, 255, 255),
+            }):Play()
             local s = btn:FindFirstChildOfClass("UIStroke")
-            if s then s.Color = B_BLUE end
+            if s then s.Color = W_ACCENT end
         else
-            btn.BackgroundColor3 = Color3.fromRGB(6, 14, 40)
-            btn.TextColor3       = B_MUTED
+            TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = W_SIDEBAR,
+                TextColor3       = W_MUTED,
+            }):Play()
             local s = btn:FindFirstChildOfClass("UIStroke")
-            if s then s.Color = B_STROKE end
+            if s then s.Color = W_STROKE end
         end
     end
 end
 
-local function AddTabButton(name, label)
+local function AddTabButton(name, icon, label)
     local btn = Instance.new("TextButton", Sidebar)
-    btn.Size             = UDim2.new(0, 80, 0, 32)
-    btn.Text             = label
+    btn.Size             = UDim2.new(0, 82, 0, 36)
+    btn.Text             = icon .. "\n" .. label
     btn.Font             = Enum.Font.GothamBold
-    btn.TextSize         = 11
+    btn.TextSize         = 9
     btn.TextXAlignment   = Enum.TextXAlignment.Center
-    btn.TextColor3       = B_MUTED
-    btn.BackgroundColor3 = Color3.fromRGB(6, 14, 40)
-    btn.ZIndex           = 4
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    btn.TextColor3       = W_MUTED
+    btn.BackgroundColor3 = W_SIDEBAR
+    btn.BackgroundTransparency = 0
+    btn.ZIndex           = 7
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
     local s = Instance.new("UIStroke", btn)
-    s.Color     = B_STROKE
+    s.Color     = W_STROKE
     s.Thickness = 1
     btn.MouseButton1Click:Connect(function() SwitchTab(name) end)
     TabButtons[name] = btn
 end
 
--- Tab labels: simple text + emoji that Roblox renders
-AddTabButton("ESP",   "👁 ESP")
-AddTabButton("AIM",   "🎯 AIM")
-AddTabButton("OTHER", "⚙ OTHER")
-AddTabButton("TEST",  "★ TEST")
+-- Special characters per menu (not emojis)
+AddTabButton("ESP",   "◈",  "ESP")
+AddTabButton("AIM",   "⊕",  "AIM")
+AddTabButton("OTHER", "≋",  "OTHER")
+AddTabButton("TEST",  "◆",  "TEST")
+AddTabButton("INFO",  "◉",  "INFO")
 
 -- =====================================================================
 --  WIDGET HELPERS
 -- =====================================================================
 local function MakeCard(page, order)
     local f = Instance.new("Frame", page)
-    f.Size                   = UDim2.new(1, -2, 0, 38)
-    f.BackgroundColor3       = B_CARD
-    f.BackgroundTransparency = 0.05
-    f.ZIndex                 = 4
+    f.Size                   = UDim2.new(1, -4, 0, 40)
+    f.BackgroundColor3       = W_CARD
+    f.BackgroundTransparency = 0
+    f.ZIndex                 = 7
     f.LayoutOrder            = order or 0
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 10)
     local s = Instance.new("UIStroke", f)
-    s.Color     = B_STROKE
+    s.Color     = W_STROKE
     s.Thickness = 1
     return f
 end
@@ -604,38 +793,45 @@ end
 local function AddToggle(page, name, target, key, order)
     local f = MakeCard(page, order)
     local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 18)
-    accent.Position         = UDim2.new(0, 0, 0.5, -9)
-    accent.BackgroundColor3 = B_INACTIVE
-    accent.ZIndex           = 5
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0.5, -10)
+    accent.BackgroundColor3 = W_INACTIVE
+    accent.ZIndex           = 8
     Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
     local TL = Instance.new("TextLabel", f)
     TL.Text                   = name
     TL.Size                   = UDim2.new(0.65, 0, 1, 0)
-    TL.Position               = UDim2.new(0, 12, 0, 0)
+    TL.Position               = UDim2.new(0, 14, 0, 0)
     TL.Font                   = Enum.Font.GothamBold
     TL.TextSize               = 10
-    TL.TextColor3             = B_TEXT
+    TL.TextColor3             = W_TEXT
     TL.BackgroundTransparency = 1
     TL.TextXAlignment         = Enum.TextXAlignment.Left
-    TL.ZIndex                 = 5
+    TL.ZIndex                 = 8
     local Track = Instance.new("Frame", f)
-    Track.Size             = UDim2.new(0, 36, 0, 18)
-    Track.Position         = UDim2.new(1, -44, 0.5, -9)
-    Track.BackgroundColor3 = target[key] and B_MID or Color3.fromRGB(10, 22, 50)
-    Track.ZIndex           = 5
+    Track.Size             = UDim2.new(0, 38, 0, 20)
+    Track.Position         = UDim2.new(1, -46, 0.5, -10)
+    Track.BackgroundColor3 = target[key] and W_ON or W_TRACK
+    Track.ZIndex           = 8
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
     local Knob = Instance.new("Frame", Track)
-    Knob.Size             = UDim2.new(0, 13, 0, 13)
-    Knob.Position         = target[key] and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
+    Knob.Size             = UDim2.new(0, 14, 0, 14)
+    Knob.Position         = target[key] and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
     Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Knob.ZIndex           = 6
+    Knob.ZIndex           = 9
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
+    local KS = Instance.new("UIStroke", Knob)
+    KS.Color     = W_STROKE
+    KS.Thickness = 0.5
     local function Refresh()
         local on = target[key]
-        Track.BackgroundColor3  = on and B_MID or Color3.fromRGB(10, 22, 50)
-        Knob.Position           = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
-        accent.BackgroundColor3 = on and B_BLUE or B_INACTIVE
+        TweenService:Create(Track, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+            BackgroundColor3 = on and W_ON or W_TRACK,
+        }):Play()
+        TweenService:Create(Knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+            Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+        }):Play()
+        accent.BackgroundColor3 = on and W_ACCENT or W_INACTIVE
     end
     Track.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -659,54 +855,51 @@ end)
 
 local function AddSlider(page, name, minVal, maxVal, target, key, order)
     local f = MakeCard(page, order)
-    f.Size = UDim2.new(1, -2, 0, 46)
+    f.Size = UDim2.new(1, -4, 0, 50)
     local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 18)
-    accent.Position         = UDim2.new(0, 0, 0, 10)
-    accent.BackgroundColor3 = B_BLUE
-    accent.ZIndex           = 5
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0, 8)
+    accent.BackgroundColor3 = W_ACCENT
+    accent.ZIndex           = 8
     Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
     local LT = Instance.new("TextLabel", f)
     LT.Text                   = name .. ":  " .. target[key]
-    LT.Size                   = UDim2.new(1, -12, 0, 20)
-    LT.Position               = UDim2.new(0, 12, 0, 4)
+    LT.Size                   = UDim2.new(1, -14, 0, 22)
+    LT.Position               = UDim2.new(0, 14, 0, 4)
     LT.Font                   = Enum.Font.GothamBold
     LT.TextSize               = 10
-    LT.TextColor3             = B_TEXT
+    LT.TextColor3             = W_TEXT
     LT.BackgroundTransparency = 1
     LT.TextXAlignment         = Enum.TextXAlignment.Left
-    LT.ZIndex                 = 5
+    LT.ZIndex                 = 8
     local TrackBg = Instance.new("Frame", f)
-    TrackBg.Size             = UDim2.new(1, -18, 0, 8)
-    TrackBg.Position         = UDim2.new(0, 9, 0, 30)
-    TrackBg.BackgroundColor3 = B_TRACK
-    TrackBg.ZIndex           = 5
+    TrackBg.Size             = UDim2.new(1, -20, 0, 8)
+    TrackBg.Position         = UDim2.new(0, 10, 0, 34)
+    TrackBg.BackgroundColor3 = W_TRACK
+    TrackBg.ZIndex           = 8
     Instance.new("UICorner", TrackBg).CornerRadius = UDim.new(1, 0)
     local pctInit = (target[key] - minVal) / math.max(maxVal - minVal, 1)
     local Fill = Instance.new("Frame", TrackBg)
     Fill.Size             = UDim2.new(pctInit, 0, 1, 0)
-    Fill.BackgroundColor3 = B_MID
-    Fill.ZIndex           = 6
+    Fill.BackgroundColor3 = W_ACCENT
+    Fill.ZIndex           = 9
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
-    local FillGrad = Instance.new("UIGradient", Fill)
-    FillGrad.Color    = ColorSequence.new({ ColorSequenceKeypoint.new(0, B_BRIGHT), ColorSequenceKeypoint.new(1, B_DARK) })
-    FillGrad.Rotation = 0
     local Knob = Instance.new("Frame", TrackBg)
     Knob.Size             = UDim2.new(0, 18, 0, 18)
     Knob.AnchorPoint      = Vector2.new(0.5, 0.5)
     Knob.Position         = UDim2.new(pctInit, 0, 0.5, 0)
-    Knob.BackgroundColor3 = Color3.fromRGB(220, 235, 255)
-    Knob.ZIndex           = 7
+    Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Knob.ZIndex           = 10
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
     local KnobStroke = Instance.new("UIStroke", Knob)
-    KnobStroke.Color     = B_MID
+    KnobStroke.Color     = W_ACCENT
     KnobStroke.Thickness = 1.5
     local HitBox = Instance.new("TextButton", f)
-    HitBox.Size                   = UDim2.new(1, -18, 0, 36)
-    HitBox.Position               = UDim2.new(0, 9, 0, 14)
+    HitBox.Size                   = UDim2.new(1, -20, 0, 36)
+    HitBox.Position               = UDim2.new(0, 10, 0, 16)
     HitBox.BackgroundTransparency = 1
     HitBox.Text                   = ""
-    HitBox.ZIndex                 = 8
+    HitBox.ZIndex                 = 11
     local function Set(ip)
         local pct = math.clamp((ip.X - TrackBg.AbsolutePosition.X) / TrackBg.AbsoluteSize.X, 0, 1)
         local val = maxVal <= 10 and (math.floor(pct * (maxVal - minVal) * 10 + minVal * 10) / 10) or math.floor(minVal + pct * (maxVal - minVal))
@@ -730,32 +923,32 @@ end
 local function AddSelector(page, name, options, target, key, order)
     local f = MakeCard(page, order)
     local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 18)
-    accent.Position         = UDim2.new(0, 0, 0.5, -9)
-    accent.BackgroundColor3 = B_BLUE
-    accent.ZIndex           = 5
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0.5, -10)
+    accent.BackgroundColor3 = W_ACCENT
+    accent.ZIndex           = 8
     Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
     local TL = Instance.new("TextLabel", f)
     TL.Text                   = name
     TL.Size                   = UDim2.new(0.48, 0, 1, 0)
-    TL.Position               = UDim2.new(0, 12, 0, 0)
+    TL.Position               = UDim2.new(0, 14, 0, 0)
     TL.Font                   = Enum.Font.GothamBold
     TL.TextSize               = 10
-    TL.TextColor3             = B_TEXT
+    TL.TextColor3             = W_TEXT
     TL.BackgroundTransparency = 1
     TL.TextXAlignment         = Enum.TextXAlignment.Left
-    TL.ZIndex                 = 5
+    TL.ZIndex                 = 8
     local Btn = Instance.new("TextButton", f)
     Btn.Font             = Enum.Font.GothamBold
     Btn.TextSize         = 9
-    Btn.TextColor3       = B_BLUE
-    Btn.BackgroundColor3 = Color3.fromRGB(5, 12, 36)
-    Btn.Size             = UDim2.new(0, 84, 0, 22)
-    Btn.Position         = UDim2.new(1, -90, 0.5, -11)
-    Btn.ZIndex           = 5
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
+    Btn.TextColor3       = W_ACCENT
+    Btn.BackgroundColor3 = W_SURFACE
+    Btn.Size             = UDim2.new(0, 88, 0, 24)
+    Btn.Position         = UDim2.new(1, -94, 0.5, -12)
+    Btn.ZIndex           = 8
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 7)
     local BS = Instance.new("UIStroke", Btn)
-    BS.Color     = B_DARK
+    BS.Color     = W_STROKE
     BS.Thickness = 1
     local idx = 1
     for i, v in ipairs(options) do if target[key] == v then idx = i; break end end
@@ -790,83 +983,81 @@ AddToggle(OtherPage, "ATTRACT PLAYERS", Settings.Other, "AttractPlayers", 1)
 
 local flyCard   = MakeCard(OtherPage, 2)
 local flyAccent = Instance.new("Frame", flyCard)
-flyAccent.Size             = UDim2.new(0, 3, 0, 18)
-flyAccent.Position         = UDim2.new(0, 0, 0.5, -9)
-flyAccent.BackgroundColor3 = B_INACTIVE
-flyAccent.ZIndex           = 5
+flyAccent.Size             = UDim2.new(0, 3, 0, 20)
+flyAccent.Position         = UDim2.new(0, 0, 0.5, -10)
+flyAccent.BackgroundColor3 = W_INACTIVE
+flyAccent.ZIndex           = 8
 Instance.new("UICorner", flyAccent).CornerRadius = UDim.new(1, 0)
 local flyLabel = Instance.new("TextLabel", flyCard)
 flyLabel.Text                   = "FLY"
 flyLabel.Size                   = UDim2.new(0.65, 0, 1, 0)
-flyLabel.Position               = UDim2.new(0, 12, 0, 0)
+flyLabel.Position               = UDim2.new(0, 14, 0, 0)
 flyLabel.Font                   = Enum.Font.GothamBold
 flyLabel.TextSize               = 10
-flyLabel.TextColor3             = B_TEXT
+flyLabel.TextColor3             = W_TEXT
 flyLabel.BackgroundTransparency = 1
 flyLabel.TextXAlignment         = Enum.TextXAlignment.Left
-flyLabel.ZIndex                 = 5
+flyLabel.ZIndex                 = 8
 local flyTrack = Instance.new("Frame", flyCard)
-flyTrack.Size             = UDim2.new(0, 36, 0, 18)
-flyTrack.Position         = UDim2.new(1, -44, 0.5, -9)
-flyTrack.BackgroundColor3 = Color3.fromRGB(10, 22, 50)
-flyTrack.ZIndex           = 5
+flyTrack.Size             = UDim2.new(0, 38, 0, 20)
+flyTrack.Position         = UDim2.new(1, -46, 0.5, -10)
+flyTrack.BackgroundColor3 = W_TRACK
+flyTrack.ZIndex           = 8
 Instance.new("UICorner", flyTrack).CornerRadius = UDim.new(1, 0)
 local flyKnob = Instance.new("Frame", flyTrack)
-flyKnob.Size             = UDim2.new(0, 13, 0, 13)
-flyKnob.Position         = UDim2.new(0, 2, 0.5, -6)
+flyKnob.Size             = UDim2.new(0, 14, 0, 14)
+flyKnob.Position         = UDim2.new(0, 3, 0.5, -7)
 flyKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-flyKnob.ZIndex           = 6
+flyKnob.ZIndex           = 9
 Instance.new("UICorner", flyKnob).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", flyKnob).Color = W_STROKE
 
 local function MakeFlySlider(order, name, key)
     local f = MakeCard(OtherPage, order)
-    f.Size = UDim2.new(1, -2, 0, 46)
+    f.Size = UDim2.new(1, -4, 0, 50)
     local ac = Instance.new("Frame", f)
-    ac.Size             = UDim2.new(0, 3, 0, 18)
-    ac.Position         = UDim2.new(0, 0, 0, 10)
-    ac.BackgroundColor3 = B_BLUE
-    ac.ZIndex           = 5
+    ac.Size             = UDim2.new(0, 3, 0, 20)
+    ac.Position         = UDim2.new(0, 0, 0, 8)
+    ac.BackgroundColor3 = W_ACCENT
+    ac.ZIndex           = 8
     Instance.new("UICorner", ac).CornerRadius = UDim.new(1, 0)
     local lt = Instance.new("TextLabel", f)
     lt.Text                   = name .. ":  0"
-    lt.Size                   = UDim2.new(1, -12, 0, 20)
-    lt.Position               = UDim2.new(0, 12, 0, 4)
+    lt.Size                   = UDim2.new(1, -14, 0, 22)
+    lt.Position               = UDim2.new(0, 14, 0, 4)
     lt.Font                   = Enum.Font.GothamBold
     lt.TextSize               = 10
-    lt.TextColor3             = B_TEXT
+    lt.TextColor3             = W_TEXT
     lt.BackgroundTransparency = 1
     lt.TextXAlignment         = Enum.TextXAlignment.Left
-    lt.ZIndex                 = 5
+    lt.ZIndex                 = 8
     local trackBg = Instance.new("Frame", f)
-    trackBg.Size             = UDim2.new(1, -18, 0, 8)
-    trackBg.Position         = UDim2.new(0, 9, 0, 30)
-    trackBg.BackgroundColor3 = B_TRACK
-    trackBg.ZIndex           = 5
+    trackBg.Size             = UDim2.new(1, -20, 0, 8)
+    trackBg.Position         = UDim2.new(0, 10, 0, 34)
+    trackBg.BackgroundColor3 = W_TRACK
+    trackBg.ZIndex           = 8
     Instance.new("UICorner", trackBg).CornerRadius = UDim.new(1, 0)
     local fill = Instance.new("Frame", trackBg)
     fill.Size             = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = B_MID
-    fill.ZIndex           = 6
+    fill.BackgroundColor3 = W_ACCENT
+    fill.ZIndex           = 9
     Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-    local fg = Instance.new("UIGradient", fill)
-    fg.Color    = ColorSequence.new({ ColorSequenceKeypoint.new(0, B_BRIGHT), ColorSequenceKeypoint.new(1, B_DARK) })
-    fg.Rotation = 0
     local knob = Instance.new("Frame", trackBg)
     knob.Size             = UDim2.new(0, 18, 0, 18)
     knob.AnchorPoint      = Vector2.new(0.5, 0.5)
     knob.Position         = UDim2.new(0, 0, 0.5, 0)
-    knob.BackgroundColor3 = Color3.fromRGB(220, 235, 255)
-    knob.ZIndex           = 7
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.ZIndex           = 10
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
     local ks = Instance.new("UIStroke", knob)
-    ks.Color     = B_MID
+    ks.Color     = W_ACCENT
     ks.Thickness = 1.5
     local hitbox = Instance.new("TextButton", f)
-    hitbox.Size                   = UDim2.new(1, -18, 0, 36)
-    hitbox.Position               = UDim2.new(0, 9, 0, 14)
+    hitbox.Size                   = UDim2.new(1, -20, 0, 36)
+    hitbox.Position               = UDim2.new(0, 10, 0, 16)
     hitbox.BackgroundTransparency = 1
     hitbox.Text                   = ""
-    hitbox.ZIndex                 = 8
+    hitbox.ZIndex                 = 11
     local function Set(ip)
         local pct = math.clamp((ip.X - trackBg.AbsolutePosition.X) / trackBg.AbsoluteSize.X, 0, 1)
         local val = math.floor(pct * 200)
@@ -892,9 +1083,11 @@ MakeFlySlider(4, "FAST FLIGHT", "FlySpeed")
 
 local function RefreshFlyToggle()
     local on = Settings.Other.Fly
-    flyTrack.BackgroundColor3  = on and B_MID or Color3.fromRGB(10, 22, 50)
-    flyKnob.Position           = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
-    flyAccent.BackgroundColor3 = on and B_BLUE or B_INACTIVE
+    TweenService:Create(flyTrack, TweenInfo.new(0.15), { BackgroundColor3 = on and W_ON or W_TRACK }):Play()
+    TweenService:Create(flyKnob, TweenInfo.new(0.15), {
+        Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+    }):Play()
+    flyAccent.BackgroundColor3 = on and W_ACCENT or W_INACTIVE
 end
 flyTrack.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -904,34 +1097,32 @@ flyTrack.InputBegan:Connect(function(i)
 end)
 RefreshFlyToggle()
 
--- teleport section header (hidden until there are other players)
+-- Teleport section
 local tpHeader = MakeCard(OtherPage, 10)
-tpHeader.BackgroundColor3 = Color3.fromRGB(3, 8, 24)
+tpHeader.BackgroundColor3 = W_SURFACE
 tpHeader.Visible          = false
 local tpAcc = Instance.new("Frame", tpHeader)
-tpAcc.Size             = UDim2.new(0, 3, 0, 18)
-tpAcc.Position         = UDim2.new(0, 0, 0.5, -9)
-tpAcc.BackgroundColor3 = B_BLUE
-tpAcc.ZIndex           = 5
+tpAcc.Size             = UDim2.new(0, 3, 0, 20)
+tpAcc.Position         = UDim2.new(0, 0, 0.5, -10)
+tpAcc.BackgroundColor3 = W_ACCENT
+tpAcc.ZIndex           = 8
 Instance.new("UICorner", tpAcc).CornerRadius = UDim.new(1, 0)
 local tpTitle = Instance.new("TextLabel", tpHeader)
 tpTitle.Text                   = "TELEPORT"
-tpTitle.Size                   = UDim2.new(1, -12, 1, 0)
-tpTitle.Position               = UDim2.new(0, 12, 0, 0)
+tpTitle.Size                   = UDim2.new(1, -14, 1, 0)
+tpTitle.Position               = UDim2.new(0, 14, 0, 0)
 tpTitle.Font                   = Enum.Font.GothamBold
 tpTitle.TextSize               = 10
-tpTitle.TextColor3             = B_BRIGHT
+tpTitle.TextColor3             = W_ACCENT
 tpTitle.BackgroundTransparency = 1
 tpTitle.TextXAlignment         = Enum.TextXAlignment.Left
-tpTitle.ZIndex                 = 5
+tpTitle.ZIndex                 = 8
 
 local tpCardOrder = 11
 local tpCards     = {}
 local tpCount     = 0
 
-local function RefreshTpHeader()
-    tpHeader.Visible = tpCount > 0
-end
+local function RefreshTpHeader() tpHeader.Visible = tpCount > 0 end
 
 local function RemoveTpCard(player)
     if tpCards[player] then
@@ -945,36 +1136,36 @@ end
 local function AddTpCard(player)
     RemoveTpCard(player)
     local f = Instance.new("Frame", OtherPage)
-    f.Size                   = UDim2.new(1, -2, 0, 38)
-    f.BackgroundColor3       = B_CARD
-    f.BackgroundTransparency = 0.05
-    f.ZIndex                 = 4
+    f.Size                   = UDim2.new(1, -4, 0, 40)
+    f.BackgroundColor3       = W_CARD
+    f.BackgroundTransparency = 0
+    f.ZIndex                 = 7
     f.LayoutOrder            = tpCardOrder
     tpCardOrder              = tpCardOrder + 1
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 10)
     local s = Instance.new("UIStroke", f)
-    s.Color     = B_DARK
+    s.Color     = W_STROKE
     s.Thickness = 1
     local nameLabel = Instance.new("TextLabel", f)
     nameLabel.Text                   = "> " .. player.Name
     nameLabel.Size                   = UDim2.new(0.6, 0, 1, 0)
-    nameLabel.Position               = UDim2.new(0, 10, 0, 0)
+    nameLabel.Position               = UDim2.new(0, 12, 0, 0)
     nameLabel.Font                   = Enum.Font.GothamBold
     nameLabel.TextSize               = 10
-    nameLabel.TextColor3             = Color3.fromRGB(140, 200, 255)
+    nameLabel.TextColor3             = W_ACCENT
     nameLabel.BackgroundTransparency = 1
     nameLabel.TextXAlignment         = Enum.TextXAlignment.Left
-    nameLabel.ZIndex                 = 5
+    nameLabel.ZIndex                 = 8
     local tpBtn = Instance.new("TextButton", f)
     tpBtn.Text             = "TP"
     tpBtn.Font             = Enum.Font.GothamBold
     tpBtn.TextSize         = 9
     tpBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
-    tpBtn.BackgroundColor3 = B_DARK
-    tpBtn.Size             = UDim2.new(0, 44, 0, 24)
-    tpBtn.Position         = UDim2.new(1, -52, 0.5, -12)
-    tpBtn.ZIndex           = 5
-    Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 6)
+    tpBtn.BackgroundColor3 = W_ACCENT
+    tpBtn.Size             = UDim2.new(0, 44, 0, 26)
+    tpBtn.Position         = UDim2.new(1, -52, 0.5, -13)
+    tpBtn.ZIndex           = 8
+    Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 7)
     tpBtn.MouseButton1Click:Connect(function()
         local myChar    = LocalPlayer.Character
         local myRoot    = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -1000,7 +1191,7 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 -- =====================================================================
---  ADMIN PAGE  —  SWINGSABER (rapid-fire remote)
+--  TEST PAGE
 -- =====================================================================
 local swingSaberActive = false
 local swingSaberConn   = nil
@@ -1025,42 +1216,45 @@ end
 
 local saberCard   = MakeCard(AdminPage, 1)
 local saberAccent = Instance.new("Frame", saberCard)
-saberAccent.Size             = UDim2.new(0, 3, 0, 18)
-saberAccent.Position         = UDim2.new(0, 0, 0.5, -9)
-saberAccent.BackgroundColor3 = B_INACTIVE
-saberAccent.ZIndex           = 5
+saberAccent.Size             = UDim2.new(0, 3, 0, 20)
+saberAccent.Position         = UDim2.new(0, 0, 0.5, -10)
+saberAccent.BackgroundColor3 = W_INACTIVE
+saberAccent.ZIndex           = 8
 Instance.new("UICorner", saberAccent).CornerRadius = UDim.new(1, 0)
 
 local saberLabel = Instance.new("TextLabel", saberCard)
 saberLabel.Text                   = "SwingSaber"
 saberLabel.Size                   = UDim2.new(0.65, 0, 1, 0)
-saberLabel.Position               = UDim2.new(0, 12, 0, 0)
+saberLabel.Position               = UDim2.new(0, 14, 0, 0)
 saberLabel.Font                   = Enum.Font.GothamBold
 saberLabel.TextSize               = 10
-saberLabel.TextColor3             = B_TEXT
+saberLabel.TextColor3             = W_TEXT
 saberLabel.BackgroundTransparency = 1
 saberLabel.TextXAlignment         = Enum.TextXAlignment.Left
-saberLabel.ZIndex                 = 5
+saberLabel.ZIndex                 = 8
 
 local saberTrack = Instance.new("Frame", saberCard)
-saberTrack.Size             = UDim2.new(0, 36, 0, 18)
-saberTrack.Position         = UDim2.new(1, -44, 0.5, -9)
-saberTrack.BackgroundColor3 = Color3.fromRGB(10, 22, 50)
-saberTrack.ZIndex           = 5
+saberTrack.Size             = UDim2.new(0, 38, 0, 20)
+saberTrack.Position         = UDim2.new(1, -46, 0.5, -10)
+saberTrack.BackgroundColor3 = W_TRACK
+saberTrack.ZIndex           = 8
 Instance.new("UICorner", saberTrack).CornerRadius = UDim.new(1, 0)
 
 local saberKnob = Instance.new("Frame", saberTrack)
-saberKnob.Size             = UDim2.new(0, 13, 0, 13)
-saberKnob.Position         = UDim2.new(0, 2, 0.5, -6)
+saberKnob.Size             = UDim2.new(0, 14, 0, 14)
+saberKnob.Position         = UDim2.new(0, 3, 0.5, -7)
 saberKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-saberKnob.ZIndex           = 6
+saberKnob.ZIndex           = 9
 Instance.new("UICorner", saberKnob).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", saberKnob).Color = W_STROKE
 
 local function RefreshSaber()
     local on = swingSaberActive
-    saberTrack.BackgroundColor3  = on and B_MID or Color3.fromRGB(10, 22, 50)
-    saberKnob.Position           = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
-    saberAccent.BackgroundColor3 = on and B_BLUE or B_INACTIVE
+    TweenService:Create(saberTrack, TweenInfo.new(0.15), { BackgroundColor3 = on and W_ON or W_TRACK }):Play()
+    TweenService:Create(saberKnob, TweenInfo.new(0.15), {
+        Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+    }):Play()
+    saberAccent.BackgroundColor3 = on and W_ACCENT or W_INACTIVE
 end
 
 saberTrack.InputBegan:Connect(function(i)
@@ -1071,51 +1265,46 @@ saberTrack.InputBegan:Connect(function(i)
 end)
 RefreshSaber()
 
--- helper: build a rapid-fire toggle row (Heartbeat loop)
 local function AddRapidToggle(page, label, order, fn)
     local active = false
     local conn   = nil
-
     local f = MakeCard(page, order)
-
     local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 18)
-    accent.Position         = UDim2.new(0, 0, 0.5, -9)
-    accent.BackgroundColor3 = B_INACTIVE
-    accent.ZIndex           = 5
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0.5, -10)
+    accent.BackgroundColor3 = W_INACTIVE
+    accent.ZIndex           = 8
     Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
-
     local lbl = Instance.new("TextLabel", f)
     lbl.Text                   = label
     lbl.Size                   = UDim2.new(0.65, 0, 1, 0)
-    lbl.Position               = UDim2.new(0, 12, 0, 0)
+    lbl.Position               = UDim2.new(0, 14, 0, 0)
     lbl.Font                   = Enum.Font.GothamBold
     lbl.TextSize               = 10
-    lbl.TextColor3             = B_TEXT
+    lbl.TextColor3             = W_TEXT
     lbl.BackgroundTransparency = 1
     lbl.TextXAlignment         = Enum.TextXAlignment.Left
-    lbl.ZIndex                 = 5
-
+    lbl.ZIndex                 = 8
     local track = Instance.new("Frame", f)
-    track.Size             = UDim2.new(0, 36, 0, 18)
-    track.Position         = UDim2.new(1, -44, 0.5, -9)
-    track.BackgroundColor3 = Color3.fromRGB(10, 22, 50)
-    track.ZIndex           = 5
+    track.Size             = UDim2.new(0, 38, 0, 20)
+    track.Position         = UDim2.new(1, -46, 0.5, -10)
+    track.BackgroundColor3 = W_TRACK
+    track.ZIndex           = 8
     Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
     local knob = Instance.new("Frame", track)
-    knob.Size             = UDim2.new(0, 13, 0, 13)
-    knob.Position         = UDim2.new(0, 2, 0.5, -6)
+    knob.Size             = UDim2.new(0, 14, 0, 14)
+    knob.Position         = UDim2.new(0, 3, 0.5, -7)
     knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.ZIndex           = 6
+    knob.ZIndex           = 9
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
+    Instance.new("UIStroke", knob).Color = W_STROKE
     local function Refresh()
-        track.BackgroundColor3  = active and B_MID or Color3.fromRGB(10, 22, 50)
-        knob.Position           = active and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
-        accent.BackgroundColor3 = active and B_BLUE or B_INACTIVE
+        TweenService:Create(track, TweenInfo.new(0.15), { BackgroundColor3 = active and W_ON or W_TRACK }):Play()
+        TweenService:Create(knob, TweenInfo.new(0.15), {
+            Position = active and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+        }):Play()
+        accent.BackgroundColor3 = active and W_ACCENT or W_INACTIVE
     end
-
     track.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
             active = not active
@@ -1133,22 +1322,174 @@ local function AddRapidToggle(page, label, order, fn)
     Refresh()
 end
 
-AddRapidToggle(AdminPage, "Collect", 2, function()
-    game:GetService("ReplicatedStorage").Events.CollectCurrencyPickup:FireServer()
-end)
-
-AddRapidToggle(AdminPage, "Strength", 3, function()
+AddRapidToggle(AdminPage, "Strength", 2, function()
     game:GetService("ReplicatedStorage").Events.SellStrength:FireServer()
 end)
 
+-- =====================================================================
+--  INFO PAGE
+-- =====================================================================
+local function MakeInfoRow(page, order, labelText, valueText)
+    local f = MakeCard(page, order)
+    local accent = Instance.new("Frame", f)
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0.5, -10)
+    accent.BackgroundColor3 = W_ACCENT
+    accent.ZIndex           = 8
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Text                   = labelText
+    lbl.Size                   = UDim2.new(0.48, 0, 1, 0)
+    lbl.Position               = UDim2.new(0, 14, 0, 0)
+    lbl.Font                   = Enum.Font.GothamBold
+    lbl.TextSize               = 10
+    lbl.TextColor3             = W_MUTED
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment         = Enum.TextXAlignment.Left
+    lbl.ZIndex                 = 8
+    local val = Instance.new("TextLabel", f)
+    val.Text                   = valueText
+    val.Size                   = UDim2.new(0.50, 0, 1, 0)
+    val.Position               = UDim2.new(0.48, 0, 0, 0)
+    val.Font                   = Enum.Font.GothamBold
+    val.TextSize               = 10
+    val.TextColor3             = W_TEXT
+    val.BackgroundTransparency = 1
+    val.TextXAlignment         = Enum.TextXAlignment.Right
+    val.ZIndex                 = 8
+    return val
+end
+
+local infoTitle = MakeCard(InfoPage, 0)
+infoTitle.BackgroundColor3 = W_ACCENT
+local infoTitleLabel = Instance.new("TextLabel", infoTitle)
+infoTitleLabel.Text                   = "ACCOUNT INFORMATION"
+infoTitleLabel.Size                   = UDim2.new(1, 0, 1, 0)
+infoTitleLabel.Font                   = Enum.Font.GothamBold
+infoTitleLabel.TextSize               = 11
+infoTitleLabel.TextColor3             = Color3.fromRGB(255, 255, 255)
+infoTitleLabel.BackgroundTransparency = 1
+infoTitleLabel.ZIndex                 = 8
+
+MakeInfoRow(InfoPage, 1, "USERNAME", LocalPlayer.Name)
+MakeInfoRow(InfoPage, 2, "USER ID",  tostring(LocalPlayer.UserId))
+
+local expiryRow = MakeInfoRow(InfoPage, 3, "KEY EXPIRY", keyExpiry)
+
+local hwidRow = MakeInfoRow(InfoPage, 4, "HWID", string.sub(GetHWID(), 1, 16) .. "...")
+
+local statusRow = MakeInfoRow(InfoPage, 5, "STATUS", "Verifying...")
+statusRow.TextColor3 = W_MUTED
+
+-- =====================================================================
+--  OPEN / CLOSE ANIMATION
+-- =====================================================================
+local menuOpen = false
+
+local function OpenMenu()
+    menuOpen = true
+    MainFrame.Size    = UDim2.new(0, 450, 0, 0)
+    MainFrame.Visible = true
+    Shadow.Visible    = true
+    TweenService:Create(MainFrame, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 450, 0, 350),
+    }):Play()
+    TweenService:Create(Shadow, TweenInfo.new(0.32, Enum.EasingStyle.Quad), {
+        BackgroundTransparency = 0.88,
+    }):Play()
+end
+
+local function CloseMenu()
+    menuOpen = false
+    TweenService:Create(MainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 450, 0, 0),
+    }):Play()
+    TweenService:Create(Shadow, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {
+        BackgroundTransparency = 1,
+    }):Play()
+    task.delay(0.24, function()
+        MainFrame.Visible = false
+        Shadow.Visible    = false
+    end)
+end
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    if not keyValid then
+        LoginFrame.Visible = not LoginFrame.Visible
+        return
+    end
+    if menuOpen then CloseMenu() else OpenMenu() end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    CloseMenu()
+end)
+
+-- =====================================================================
+--  LOGIN LOGIC
+-- =====================================================================
+local function OnKeyVerified(valid, expiry)
+    keyValid  = valid
+    keyExpiry = expiry or "—"
+    expiryRow.Text      = keyExpiry
+    statusRow.Text      = valid and "Active" or "Invalid"
+    statusRow.TextColor3 = valid and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(239, 68, 68)
+    if valid then
+        LoginFrame.Visible  = false
+        LoginStatus.Text    = ""
+        OpenMenu()
+    else
+        LoginStatus.Text = "Invalid key. Please check and try again."
+    end
+end
+
+LoginBtn.MouseButton1Click:Connect(function()
+    local input = LoginBox.Text
+    if #input < 4 then
+        LoginStatus.Text = "Enter a valid key."
+        return
+    end
+    LoginStatus.Text      = "Verifying..."
+    LoginStatus.TextColor3 = W_MUTED
+    LoginBtn.Active       = false
+    VerifyKey(input, function(valid, expiry)
+        LoginBtn.Active = true
+        if valid then
+            SaveKey(input)
+            savedKey = input
+        end
+        OnKeyVerified(valid, expiry)
+    end)
+end)
+
+-- =====================================================================
+--  AUTO-LOGIN FROM SAVED KEY
+-- =====================================================================
+task.spawn(function()
+    local stored = LoadKey()
+    if stored and #stored > 4 then
+        savedKey         = stored
+        LoginBox.Text    = stored
+        LoginStatus.Text = "Checking saved key..."
+        LoginStatus.TextColor3 = W_MUTED
+        VerifyKey(stored, function(valid, expiry)
+            OnKeyVerified(valid, expiry)
+            if not valid then
+                LoginFrame.Visible = true
+                LoginStatus.Text   = "Saved key expired. Enter a new key."
+            end
+        end)
+    else
+        LoginFrame.Visible = true
+    end
+end)
 
 -- =====================================================================
 --  ANIMATED STROKE
 -- =====================================================================
 RunService.RenderStepped:Connect(function()
-    MainStroke.Color            = currentAutoColor
-    ToggleStroke.Color          = currentAutoColor
-    HeaderLine.BackgroundColor3 = currentAutoColor
+    MainStroke.Color = currentAutoColor
+    ToggleStroke.Color = currentAutoColor
 end)
 
 SwitchTab("ESP")
