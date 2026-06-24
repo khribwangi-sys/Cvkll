@@ -1,242 +1,310 @@
--- Remote Spy (mobile-friendly)
+-- RemoteSpy v2  (mobile-friendly, copy-all, filter)
 
-local Players          = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService       = game:GetService("RunService")
-local LocalPlayer      = Players.LocalPlayer
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
 
--- =====================================================================
---  COLOUR
--- =====================================================================
-local C_BG     = Color3.fromRGB(3,   7,  20)
-local C_HEADER = Color3.fromRGB(5,  12,  35)
-local C_BLUE   = Color3.fromRGB(0,  150, 255)
-local C_GREEN  = Color3.fromRGB(0,  210,  90)
-local C_YELLOW = Color3.fromRGB(255,200,  30)
-local C_TEXT   = Color3.fromRGB(210,230, 255)
-local C_MUTED  = Color3.fromRGB(90, 120, 180)
-local C_STROKE = Color3.fromRGB(10,  30,  80)
-local C_RE     = Color3.fromRGB(0,  180, 255)
-local C_RF     = Color3.fromRGB(120, 80, 255)
+-- ── parent GUI (try safest first) ─────────────────────────────────────
+local GuiParent
+pcall(function() GuiParent = gethui() end)
+if not GuiParent then pcall(function() GuiParent = game:GetService("CoreGui") end) end
+if not GuiParent then GuiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
--- =====================================================================
---  GUI
--- =====================================================================
-local Gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
-Gui.Name         = "RemoteSpy"
-Gui.ResetOnSpawn = false
+-- destroy old copy
+pcall(function()
+    local old = GuiParent:FindFirstChild("_RSpy")
+    if old then old:Destroy() end
+end)
 
--- main frame
-local Frame = Instance.new("Frame", Gui)
-Frame.Size                   = UDim2.new(0, 380, 0, 420)
-Frame.Position               = UDim2.new(0.5, -190, 0.5, -210)
-Frame.BackgroundColor3       = C_BG
-Frame.BackgroundTransparency = 0.10
-Frame.Active                 = true
-Frame.Draggable              = true
-Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 14)
-local FS = Instance.new("UIStroke", Frame)
-FS.Color     = C_BLUE
-FS.Thickness = 1.5
+-- ── colours ───────────────────────────────────────────────────────────
+local BG     = Color3.fromRGB(4,   9,  26)
+local HEAD   = Color3.fromRGB(6,  14,  40)
+local BLUE   = Color3.fromRGB(0,  150, 255)
+local PURPLE = Color3.fromRGB(140, 60, 255)
+local TEXT   = Color3.fromRGB(210,230, 255)
+local MUTED  = Color3.fromRGB(90, 120, 175)
+local CARD   = Color3.fromRGB(5,  12,  34)
+local STROKE = Color3.fromRGB(12,  30,  80)
 
--- header
-local Header = Instance.new("Frame", Frame)
-Header.Size             = UDim2.new(1, 0, 0, 40)
-Header.BackgroundColor3 = C_HEADER
-Header.BackgroundTransparency = 0.30
-Header.ZIndex           = 3
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 14)
+-- ── state ─────────────────────────────────────────────────────────────
+local showRE     = true
+local showRF     = true
+local logCount   = 0
+local MAX_LOGS   = 120
+local logEntries = {}    -- {frame, text}
+local fullText   = {}    -- plain strings for copy
 
-local HeaderLine = Instance.new("Frame", Header)
-HeaderLine.Size             = UDim2.new(1, -16, 0, 1)
-HeaderLine.Position         = UDim2.new(0, 8, 1, -1)
-HeaderLine.BackgroundColor3 = C_BLUE
-HeaderLine.ZIndex           = 4
-Instance.new("UICorner", HeaderLine).CornerRadius = UDim.new(1, 0)
+-- ── ScreenGui ─────────────────────────────────────────────────────────
+local Gui = Instance.new("ScreenGui")
+Gui.Name               = "_RSpy"
+Gui.ResetOnSpawn       = false
+Gui.IgnoreGuiInset     = true
+Gui.DisplayOrder       = 999
+Gui.Parent             = GuiParent
 
-local TitleLabel = Instance.new("TextLabel", Header)
-TitleLabel.Text                   = "Remote Spy"
-TitleLabel.Size                   = UDim2.new(1, -90, 1, 0)
-TitleLabel.Position               = UDim2.new(0, 12, 0, 0)
-TitleLabel.Font                   = Enum.Font.GothamBold
-TitleLabel.TextSize               = 14
-TitleLabel.TextColor3             = C_TEXT
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
-TitleLabel.ZIndex                 = 4
+-- ── main frame ────────────────────────────────────────────────────────
+local Main = Instance.new("Frame", Gui)
+Main.Size                   = UDim2.new(0, 370, 0, 430)
+Main.Position               = UDim2.new(0.5, -185, 0.5, -215)
+Main.BackgroundColor3       = BG
+Main.BackgroundTransparency = 0.06
+Main.Active                 = true
+Main.Draggable              = true
+Main.Visible                = true
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
+local MS = Instance.new("UIStroke", Main)
+MS.Color     = BLUE
+MS.Thickness = 1.5
 
-local CountLabel = Instance.new("TextLabel", Header)
-CountLabel.Text                   = "0 calls"
-CountLabel.Size                   = UDim2.new(0, 60, 1, 0)
-CountLabel.Position               = UDim2.new(1, -100, 0, 0)
-CountLabel.Font                   = Enum.Font.Gotham
-CountLabel.TextSize               = 10
-CountLabel.TextColor3             = C_MUTED
-CountLabel.BackgroundTransparency = 1
-CountLabel.TextXAlignment         = Enum.TextXAlignment.Right
-CountLabel.ZIndex                 = 4
+-- ── header ────────────────────────────────────────────────────────────
+local Hdr = Instance.new("Frame", Main)
+Hdr.Size                   = UDim2.new(1, 0, 0, 40)
+Hdr.BackgroundColor3       = HEAD
+Hdr.BackgroundTransparency = 0.25
+Hdr.ZIndex                 = 3
+Instance.new("UICorner", Hdr).CornerRadius = UDim.new(0, 14)
 
--- clear button
-local ClearBtn = Instance.new("TextButton", Header)
-ClearBtn.Text                   = "CLR"
-ClearBtn.Size                   = UDim2.new(0, 36, 0, 26)
-ClearBtn.Position               = UDim2.new(1, -80, 0.5, -13)
-ClearBtn.Font                   = Enum.Font.GothamBold
-ClearBtn.TextSize               = 10
-ClearBtn.TextColor3             = C_YELLOW
-ClearBtn.BackgroundColor3       = Color3.fromRGB(40, 30, 5)
-ClearBtn.BackgroundTransparency = 0.20
-ClearBtn.ZIndex                 = 5
-Instance.new("UICorner", ClearBtn).CornerRadius = UDim.new(0, 6)
+local HdrLine = Instance.new("Frame", Hdr)
+HdrLine.Size             = UDim2.new(1, -16, 0, 1)
+HdrLine.Position         = UDim2.new(0, 8, 1, -1)
+HdrLine.BackgroundColor3 = BLUE
+HdrLine.ZIndex           = 4
+Instance.new("UICorner", HdrLine).CornerRadius = UDim.new(1, 0)
 
--- close button
-local CloseBtn = Instance.new("TextButton", Header)
-CloseBtn.Text                   = "X"
-CloseBtn.Size                   = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position               = UDim2.new(1, -36, 0.5, -15)
-CloseBtn.Font                   = Enum.Font.GothamBold
-CloseBtn.TextSize               = 12
-CloseBtn.TextColor3             = C_TEXT
-CloseBtn.BackgroundColor3       = Color3.fromRGB(10, 20, 55)
-CloseBtn.BackgroundTransparency = 0.20
-CloseBtn.ZIndex                 = 5
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 7)
+local HdrTitle = Instance.new("TextLabel", Hdr)
+HdrTitle.Text                   = "Remote Spy"
+HdrTitle.Size                   = UDim2.new(0, 120, 1, 0)
+HdrTitle.Position               = UDim2.new(0, 12, 0, 0)
+HdrTitle.Font                   = Enum.Font.GothamBold
+HdrTitle.TextSize               = 13
+HdrTitle.TextColor3             = TEXT
+HdrTitle.BackgroundTransparency = 1
+HdrTitle.TextXAlignment         = Enum.TextXAlignment.Left
+HdrTitle.ZIndex                 = 4
 
--- filter bar
-local FilterBar = Instance.new("Frame", Frame)
-FilterBar.Size             = UDim2.new(1, -12, 0, 30)
-FilterBar.Position         = UDim2.new(0, 6, 0, 44)
-FilterBar.BackgroundColor3 = Color3.fromRGB(6, 14, 38)
-FilterBar.BackgroundTransparency = 0.20
-FilterBar.ZIndex           = 3
-Instance.new("UICorner", FilterBar).CornerRadius = UDim.new(0, 8)
-local FBList = Instance.new("UIListLayout", FilterBar)
-FBList.FillDirection        = Enum.FillDirection.Horizontal
-FBList.Padding              = UDim.new(0, 4)
-FBList.VerticalAlignment    = Enum.VerticalAlignment.Center
-FBList.HorizontalAlignment  = Enum.HorizontalAlignment.Left
-local FBPad = Instance.new("UIPadding", FilterBar)
-FBPad.PaddingLeft = UDim.new(0, 6)
+local CountLbl = Instance.new("TextLabel", Hdr)
+CountLbl.Text                   = "0 logs"
+CountLbl.Size                   = UDim2.new(0, 55, 1, 0)
+CountLbl.Position               = UDim2.new(0, 130, 0, 0)
+CountLbl.Font                   = Enum.Font.Gotham
+CountLbl.TextSize               = 10
+CountLbl.TextColor3             = MUTED
+CountLbl.BackgroundTransparency = 1
+CountLbl.TextXAlignment         = Enum.TextXAlignment.Left
+CountLbl.ZIndex                 = 4
 
-local showRE = true
-local showRF = true
+local function MakeHdrBtn(text, col, xRight, w)
+    local b = Instance.new("TextButton", Hdr)
+    b.Text                   = text
+    b.Size                   = UDim2.new(0, w or 36, 0, 26)
+    b.Position               = UDim2.new(1, xRight, 0.5, -13)
+    b.Font                   = Enum.Font.GothamBold
+    b.TextSize               = 9
+    b.TextColor3             = col
+    b.BackgroundColor3       = Color3.fromRGB(8, 18, 50)
+    b.BackgroundTransparency = 0.15
+    b.ZIndex                 = 5
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    return b
+end
 
-local function MakeFilterBtn(label, col, onToggle)
-    local b = Instance.new("TextButton", FilterBar)
+local BtnClose  = MakeHdrBtn("X",    TEXT,   -36, 30)
+local BtnCopy   = MakeHdrBtn("COPY", BLUE,   -72, 34)
+local BtnClear  = MakeHdrBtn("CLR",  Color3.fromRGB(255,200,30), -110, 34)
+
+-- ── filter bar ────────────────────────────────────────────────────────
+local FBar = Instance.new("Frame", Main)
+FBar.Size             = UDim2.new(1, -12, 0, 28)
+FBar.Position         = UDim2.new(0, 6, 0, 44)
+FBar.BackgroundColor3 = Color3.fromRGB(6, 14, 38)
+FBar.BackgroundTransparency = 0.25
+FBar.ZIndex           = 3
+Instance.new("UICorner", FBar).CornerRadius = UDim.new(0, 8)
+local FList = Instance.new("UIListLayout", FBar)
+FList.FillDirection       = Enum.FillDirection.Horizontal
+FList.Padding             = UDim.new(0, 5)
+FList.VerticalAlignment   = Enum.VerticalAlignment.Center
+FList.HorizontalAlignment = Enum.HorizontalAlignment.Left
+local FPad = Instance.new("UIPadding", FBar)
+FPad.PaddingLeft = UDim.new(0, 6)
+
+local function MakeFBtn(label, col)
+    local b = Instance.new("TextButton", FBar)
     b.Text             = label
-    b.Size             = UDim2.new(0, 64, 0, 22)
+    b.Size             = UDim2.new(0, 70, 0, 20)
     b.Font             = Enum.Font.GothamBold
     b.TextSize         = 9
     b.TextColor3       = Color3.fromRGB(255, 255, 255)
     b.BackgroundColor3 = col
     b.BackgroundTransparency = 0.10
     b.ZIndex           = 4
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-    b.MouseButton1Click:Connect(onToggle)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
     return b
 end
 
-local btnRE = MakeFilterBtn("RE: ON", C_RE, function()
+local BtnRE = MakeFBtn("RE: ON",  BLUE)
+local BtnRF = MakeFBtn("RF: ON",  PURPLE)
+
+BtnRE.MouseButton1Click:Connect(function()
     showRE = not showRE
-    btnRE.Text = showRE and "RE: ON" or "RE: OFF"
-    btnRE.BackgroundTransparency = showRE and 0.10 or 0.65
+    BtnRE.Text = showRE and "RE: ON" or "RE: OFF"
+    BtnRE.BackgroundTransparency = showRE and 0.10 or 0.65
 end)
-local btnRF = MakeFilterBtn("RF: ON", C_RF, function()
+BtnRF.MouseButton1Click:Connect(function()
     showRF = not showRF
-    btnRF.Text = showRF and "RF: ON" or "RF: OFF"
-    btnRF.BackgroundTransparency = showRF and 0.10 or 0.65
+    BtnRF.Text = showRF and "RF: ON" or "RF: OFF"
+    BtnRF.BackgroundTransparency = showRF and 0.10 or 0.65
 end)
 
--- scroll list
-local Scroll = Instance.new("ScrollingFrame", Frame)
-Scroll.Size                 = UDim2.new(1, -12, 1, -82)
-Scroll.Position             = UDim2.new(0, 6, 0, 78)
+-- ── log scroll ────────────────────────────────────────────────────────
+local Scroll = Instance.new("ScrollingFrame", Main)
+Scroll.Size                 = UDim2.new(1, -12, 1, -78)
+Scroll.Position             = UDim2.new(0, 6, 0, 76)
 Scroll.BackgroundTransparency = 1
 Scroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
 Scroll.CanvasSize           = UDim2.new(0, 0, 0, 0)
 Scroll.ScrollBarThickness   = 3
-Scroll.ScrollBarImageColor3 = C_BLUE
-Scroll.ScrollingDirection   = Enum.ScrollingDirection.Y
+Scroll.ScrollBarImageColor3 = BLUE
 Scroll.ZIndex               = 3
-local ListLayout = Instance.new("UIListLayout", Scroll)
-ListLayout.Padding   = UDim.new(0, 3)
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local SLayout = Instance.new("UIListLayout", Scroll)
+SLayout.Padding   = UDim.new(0, 3)
+SLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
--- =====================================================================
---  TOGGLE BUTTON
--- =====================================================================
-local ToggleBtn = Instance.new("TextButton", Gui)
-ToggleBtn.Size                   = UDim2.new(0, 54, 0, 54)
-ToggleBtn.Position               = UDim2.new(0.02, 0, 0.35, 0)
-ToggleBtn.Text                   = "SPY"
-ToggleBtn.Font                   = Enum.Font.GothamBold
-ToggleBtn.TextSize               = 12
-ToggleBtn.TextColor3             = C_BLUE
-ToggleBtn.BackgroundColor3       = C_BG
-ToggleBtn.BackgroundTransparency = 0.15
-ToggleBtn.Active                 = true
-ToggleBtn.Draggable              = true
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
-local TS = Instance.new("UIStroke", ToggleBtn)
-TS.Color     = C_BLUE
-TS.Thickness = 1.5
+-- ── copy overlay ──────────────────────────────────────────────────────
+local CopyFrame = Instance.new("Frame", Main)
+CopyFrame.Size                   = UDim2.new(1, -20, 1, -60)
+CopyFrame.Position               = UDim2.new(0, 10, 0, 50)
+CopyFrame.BackgroundColor3       = Color3.fromRGB(3, 7, 20)
+CopyFrame.BackgroundTransparency = 0.05
+CopyFrame.Visible                = false
+CopyFrame.ZIndex                 = 10
+Instance.new("UICorner", CopyFrame).CornerRadius = UDim.new(0, 10)
 
-ToggleBtn.MouseButton1Click:Connect(function()
-    Frame.Visible = not Frame.Visible
+local CopyClose = Instance.new("TextButton", CopyFrame)
+CopyClose.Text                   = "X  Close"
+CopyClose.Size                   = UDim2.new(1, -20, 0, 32)
+CopyClose.Position               = UDim2.new(0, 10, 0, 8)
+CopyClose.Font                   = Enum.Font.GothamBold
+CopyClose.TextSize               = 11
+CopyClose.TextColor3             = TEXT
+CopyClose.BackgroundColor3       = Color3.fromRGB(8, 18, 50)
+CopyClose.BackgroundTransparency = 0.15
+CopyClose.ZIndex                 = 11
+Instance.new("UICorner", CopyClose).CornerRadius = UDim.new(0, 8)
+
+local CopyHint = Instance.new("TextLabel", CopyFrame)
+CopyHint.Text                   = "tap inside box → select all → copy"
+CopyHint.Size                   = UDim2.new(1, -20, 0, 20)
+CopyHint.Position               = UDim2.new(0, 10, 0, 44)
+CopyHint.Font                   = Enum.Font.Gotham
+CopyHint.TextSize               = 9
+CopyHint.TextColor3             = MUTED
+CopyHint.BackgroundTransparency = 1
+CopyHint.ZIndex                 = 11
+
+local CopyBox = Instance.new("TextBox", CopyFrame)
+CopyBox.Size                   = UDim2.new(1, -20, 1, -72)
+CopyBox.Position               = UDim2.new(0, 10, 0, 66)
+CopyBox.Font                   = Enum.Font.Code
+CopyBox.TextSize               = 9
+CopyBox.TextColor3             = TEXT
+CopyBox.BackgroundColor3       = Color3.fromRGB(2, 5, 16)
+CopyBox.BackgroundTransparency = 0.05
+CopyBox.TextXAlignment         = Enum.TextXAlignment.Left
+CopyBox.TextYAlignment         = Enum.TextYAlignment.Top
+CopyBox.MultiLine              = true
+CopyBox.ClearTextOnFocus       = false
+CopyBox.Text                   = ""
+CopyBox.ZIndex                 = 11
+Instance.new("UICorner", CopyBox).CornerRadius = UDim.new(0, 8)
+
+CopyClose.MouseButton1Click:Connect(function()
+    CopyFrame.Visible = false
 end)
-CloseBtn.MouseButton1Click:Connect(function()
-    Frame.Visible = false
+
+-- ── floating toggle ────────────────────────────────────────────────────
+local Tog = Instance.new("TextButton", Gui)
+Tog.Size                   = UDim2.new(0, 60, 0, 60)
+Tog.Position               = UDim2.new(0.5, -30, 0, 20)
+Tog.Text                   = "SPY"
+Tog.Font                   = Enum.Font.GothamBold
+Tog.TextSize               = 13
+Tog.TextColor3             = BLUE
+Tog.BackgroundColor3       = BG
+Tog.BackgroundTransparency = 0.10
+Tog.Active                 = true
+Tog.Draggable              = true
+Instance.new("UICorner", Tog).CornerRadius = UDim.new(1, 0)
+local TS = Instance.new("UIStroke", Tog)
+TS.Color     = BLUE
+TS.Thickness = 2
+
+Tog.MouseButton1Click:Connect(function()
+    Main.Visible = not Main.Visible
+end)
+BtnClose.MouseButton1Click:Connect(function()
+    Main.Visible = false
 end)
 
--- =====================================================================
---  LOG ENTRY BUILDER
--- =====================================================================
-local logCount   = 0
-local MAX_LOGS   = 80
-local logEntries = {}
+-- ── helpers ───────────────────────────────────────────────────────────
+local function GetPath(obj)
+    local parts = {}
+    local cur   = obj
+    while cur and cur ~= game do
+        table.insert(parts, 1, cur.Name)
+        cur = cur.Parent
+    end
+    return table.concat(parts, ".")
+end
 
-local function ArgToString(v)
+local function ArgToStr(v)
     local t = typeof(v)
-    if t == "string"          then return '"' .. tostring(v) .. '"'
-    elseif t == "number"      then return tostring(math.floor(v * 1000) / 1000)
-    elseif t == "boolean"     then return tostring(v)
-    elseif t == "nil"         then return "nil"
-    elseif t == "Vector3"     then return string.format("V3(%.1f,%.1f,%.1f)", v.X, v.Y, v.Z)
-    elseif t == "CFrame"      then return string.format("CF(%.1f,%.1f,%.1f)", v.X, v.Y, v.Z)
-    elseif t == "Instance"    then return "[" .. v.ClassName .. "] " .. v.Name
-    elseif t == "table"       then return "{table}"
-    else                           return t .. ":" .. tostring(v)
+    if t == "string"   then return '"' .. v:sub(1, 60) .. '"'
+    elseif t == "number"   then return tostring(math.floor(v * 100) / 100)
+    elseif t == "boolean"  then return tostring(v)
+    elseif t == "Vector3"  then return ("V3(%.1f,%.1f,%.1f)"):format(v.X, v.Y, v.Z)
+    elseif t == "CFrame"   then return ("CF(%.1f,%.1f,%.1f)"):format(v.X, v.Y, v.Z)
+    elseif t == "Instance" then return "[" .. v.ClassName .. "] " .. v.Name
+    elseif t == "table"    then return "{table #" .. tostring(#v) .. "}"
+    else                        return t .. ":" .. tostring(v):sub(1, 40)
     end
 end
 
-local function AddLog(remoteType, remotePath, args)
+-- ── add log entry ─────────────────────────────────────────────────────
+local function AddLog(rtype, path, args)
     logCount = logCount + 1
-    CountLabel.Text = logCount .. " calls"
+    CountLbl.Text = logCount .. " logs"
 
-    -- cull old entries
     if #logEntries >= MAX_LOGS then
         local old = table.remove(logEntries, 1)
+        table.remove(fullText, 1)
         if old and old.Parent then old:Destroy() end
     end
 
-    local col = remoteType == "RE" and C_RE or C_RF
+    local col = rtype == "RE" and BLUE or PURPLE
+
+    local argParts = {}
+    for _, v in ipairs(args) do table.insert(argParts, ArgToStr(v)) end
+    local argStr = #argParts > 0 and table.concat(argParts, "  |  ") or "(no args)"
+
+    local lineText = ("[%s] %s\n  args: %s"):format(rtype, path, argStr)
+    table.insert(fullText, lineText)
 
     local row = Instance.new("Frame", Scroll)
-    row.Size                   = UDim2.new(1, -2, 0, 52)
-    row.BackgroundColor3       = Color3.fromRGB(4, 10, 28)
+    row.Size                   = UDim2.new(1, -2, 0, 48)
+    row.BackgroundColor3       = CARD
     row.BackgroundTransparency = 0.05
     row.ZIndex                 = 4
     row.LayoutOrder            = logCount
     Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
-    local rowStroke = Instance.new("UIStroke", row)
-    rowStroke.Color     = C_STROKE
-    rowStroke.Thickness = 1
+    local rStroke = Instance.new("UIStroke", row)
+    rStroke.Color     = STROKE
+    rStroke.Thickness = 1
 
-    -- type badge
     local badge = Instance.new("TextLabel", row)
-    badge.Text                   = remoteType
-    badge.Size                   = UDim2.new(0, 26, 0, 16)
-    badge.Position               = UDim2.new(0, 6, 0, 6)
+    badge.Text                   = rtype
+    badge.Size                   = UDim2.new(0, 28, 0, 16)
+    badge.Position               = UDim2.new(0, 6, 0, 5)
     badge.Font                   = Enum.Font.GothamBold
     badge.TextSize               = 8
     badge.TextColor3             = Color3.fromRGB(255, 255, 255)
@@ -245,94 +313,99 @@ local function AddLog(remoteType, remotePath, args)
     badge.ZIndex                 = 5
     Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 4)
 
-    -- remote path
-    local nameLabel = Instance.new("TextLabel", row)
-    nameLabel.Text                   = remotePath
-    nameLabel.Size                   = UDim2.new(1, -40, 0, 18)
-    nameLabel.Position               = UDim2.new(0, 36, 0, 4)
-    nameLabel.Font                   = Enum.Font.GothamBold
-    nameLabel.TextSize               = 10
-    nameLabel.TextColor3             = col
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.TextXAlignment         = Enum.TextXAlignment.Left
-    nameLabel.TextTruncate           = Enum.TextTruncate.AtEnd
-    nameLabel.ZIndex                 = 5
+    local nameLbl = Instance.new("TextLabel", row)
+    nameLbl.Text                   = path
+    nameLbl.Size                   = UDim2.new(1, -42, 0, 18)
+    nameLbl.Position               = UDim2.new(0, 38, 0, 3)
+    nameLbl.Font                   = Enum.Font.GothamBold
+    nameLbl.TextSize               = 10
+    nameLbl.TextColor3             = col
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.TextXAlignment         = Enum.TextXAlignment.Left
+    nameLbl.TextTruncate           = Enum.TextTruncate.AtEnd
+    nameLbl.ZIndex                 = 5
 
-    -- args
-    local argParts = {}
-    for _, v in ipairs(args) do
-        table.insert(argParts, ArgToString(v))
-    end
-    local argStr = #argParts > 0 and table.concat(argParts, "  |  ") or "(no args)"
-
-    local argLabel = Instance.new("TextLabel", row)
-    argLabel.Text                   = argStr
-    argLabel.Size                   = UDim2.new(1, -12, 0, 26)
-    argLabel.Position               = UDim2.new(0, 6, 0, 24)
-    argLabel.Font                   = Enum.Font.Gotham
-    argLabel.TextSize               = 9
-    argLabel.TextColor3             = C_TEXT
-    argLabel.BackgroundTransparency = 1
-    argLabel.TextXAlignment         = Enum.TextXAlignment.Left
-    argLabel.TextTruncate           = Enum.TextTruncate.AtEnd
-    argLabel.ZIndex                 = 5
+    local argLbl = Instance.new("TextLabel", row)
+    argLbl.Text                   = argStr
+    argLbl.Size                   = UDim2.new(1, -10, 0, 22)
+    argLbl.Position               = UDim2.new(0, 5, 0, 24)
+    argLbl.Font                   = Enum.Font.Code
+    argLbl.TextSize               = 9
+    argLbl.TextColor3             = TEXT
+    argLbl.BackgroundTransparency = 1
+    argLbl.TextXAlignment         = Enum.TextXAlignment.Left
+    argLbl.TextTruncate           = Enum.TextTruncate.AtEnd
+    argLbl.ZIndex                 = 5
 
     table.insert(logEntries, row)
 
-    -- auto-scroll to bottom
     task.defer(function()
         Scroll.CanvasPosition = Vector2.new(0, math.max(0, Scroll.AbsoluteCanvasSize.Y - Scroll.AbsoluteSize.Y))
     end)
 end
 
-ClearBtn.MouseButton1Click:Connect(function()
+-- ── button actions ────────────────────────────────────────────────────
+BtnClear.MouseButton1Click:Connect(function()
     for _, e in ipairs(logEntries) do
         if e and e.Parent then e:Destroy() end
     end
     logEntries = {}
+    fullText   = {}
     logCount   = 0
-    CountLabel.Text = "0 calls"
+    CountLbl.Text = "0 logs"
 end)
 
--- =====================================================================
---  HOOK REMOTES  via __namecall
--- =====================================================================
-local function GetPath(obj)
-    local parts = {}
-    local cur = obj
-    while cur and cur ~= game do
-        table.insert(parts, 1, cur.Name)
-        cur = cur.Parent
-    end
-    return table.concat(parts, ".")
-end
+BtnCopy.MouseButton1Click:Connect(function()
+    CopyBox.Text      = table.concat(fullText, "\n\n")
+    CopyFrame.Visible = true
+end)
 
-local mt      = getrawmetatable(game)
-local oldNC   = mt.__namecall
+-- ── HOOK ──────────────────────────────────────────────────────────────
+local hooked = false
+pcall(function()
+    local mt    = getrawmetatable(game)
+    local oldNC = mt.__namecall
+    setreadonly(mt, false)
 
-setreadonly(mt, false)
-
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-
-    pcall(function()
-        if method == "FireServer" and typeof(self) == "Instance" and self:IsA("RemoteEvent") then
-            if showRE then
-                local args = {...}
-                local path = GetPath(self)
-                task.defer(function() AddLog("RE", path, args) end)
-            end
-
-        elseif method == "InvokeServer" and typeof(self) == "Instance" and self:IsA("RemoteFunction") then
-            if showRF then
-                local args = {...}
-                local path = GetPath(self)
-                task.defer(function() AddLog("RF", path, args) end)
+    mt.__namecall = function(self, ...)
+        local ok, method = pcall(getnamecallmethod)
+        if ok and method then
+            if showRE and method == "FireServer" then
+                local ok2, isRE = pcall(function() return self:IsA("RemoteEvent") end)
+                if ok2 and isRE then
+                    local args = {...}
+                    local path = GetPath(self)
+                    task.defer(function() pcall(AddLog, "RE", path, args) end)
+                end
+            elseif showRF and method == "InvokeServer" then
+                local ok2, isRF = pcall(function() return self:IsA("RemoteFunction") end)
+                if ok2 and isRF then
+                    local args = {...}
+                    local path = GetPath(self)
+                    task.defer(function() pcall(AddLog, "RF", path, args) end)
+                end
             end
         end
-    end)
+        return oldNC(self, ...)
+    end
 
-    return oldNC(self, ...)
+    setreadonly(mt, true)
+    hooked = true
 end)
 
-setreadonly(mt, true)
+-- status notice
+local StatusLbl = Instance.new("TextLabel", Gui)
+StatusLbl.Size                   = UDim2.new(0, 260, 0, 30)
+StatusLbl.Position               = UDim2.new(0.5, -130, 0, 80)
+StatusLbl.Font                   = Enum.Font.GothamBold
+StatusLbl.TextSize               = 12
+StatusLbl.BackgroundColor3       = hooked and Color3.fromRGB(0,60,20) or Color3.fromRGB(60,0,0)
+StatusLbl.BackgroundTransparency = 0.10
+StatusLbl.TextColor3             = hooked and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,80,80)
+StatusLbl.Text                   = hooked and "Hook OK  —  play the game now" or "Hook FAILED  —  exploit may not support"
+StatusLbl.ZIndex                 = 20
+Instance.new("UICorner", StatusLbl).CornerRadius = UDim.new(0, 8)
+
+task.delay(4, function()
+    if StatusLbl and StatusLbl.Parent then StatusLbl:Destroy() end
+end)
