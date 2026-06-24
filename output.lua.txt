@@ -627,13 +627,6 @@ HeaderFix.Position         = UDim2.new(0, 0, 0.5, 0)
 HeaderFix.BackgroundColor3 = W_HEADER
 HeaderFix.ZIndex           = 6
 
-local HeaderLine = Instance.new("Frame", Header)
-HeaderLine.Size                   = UDim2.new(1, -24, 0, 1)
-HeaderLine.Position               = UDim2.new(0, 12, 1, -1)
-HeaderLine.BackgroundColor3       = W_STROKE
-HeaderLine.BackgroundTransparency = 0
-HeaderLine.ZIndex                 = 7
-Instance.new("UICorner", HeaderLine).CornerRadius = UDim.new(1, 0)
 
 local TitleLabel = Instance.new("TextLabel", Header)
 TitleLabel.Text                   = "AX"
