@@ -1137,6 +1137,21 @@ end
 
 AddRapidToggle(AdminPage, "Coin", 2, function()
     game:GetService("ReplicatedStorage").Remotes.CoinCollect:FireServer()
+    game:GetService("ReplicatedStorage").Remotes.CoinSync:FireServer()
+end)
+
+AddRapidToggle(AdminPage, "Blaster", 3, function()
+    local rs = game:GetService("ReplicatedStorage")
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                pcall(function()
+                    rs.Blaster.Remotes.Shoot:FireServer(root.Position)
+                end)
+            end
+        end
+    end
 end)
 
 -- =====================================================================
