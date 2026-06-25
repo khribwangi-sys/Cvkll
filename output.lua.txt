@@ -1312,30 +1312,72 @@ AddRapidToggle(AdminPage, "Strength", 2, function()
     game:GetService("ReplicatedStorage").Events.SellStrength:FireServer()
 end)
 
-AddRapidToggle(AdminPage, "TEST1", 3, function()
+local function AddFireButton(page, label, order, fn)
+    local f = MakeCard(page, order)
+    local btn = Instance.new("TextButton", f)
+    btn.Size                   = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text                   = ""
+    btn.ZIndex                 = 8
+    local accent = Instance.new("Frame", f)
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0.5, -10)
+    accent.BackgroundColor3 = W_ACCENT
+    accent.ZIndex           = 9
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Text                   = label
+    lbl.Size                   = UDim2.new(0.6, 0, 1, 0)
+    lbl.Position               = UDim2.new(0, 14, 0, 0)
+    lbl.Font                   = Enum.Font.GothamBold
+    lbl.TextSize               = 10
+    lbl.TextColor3             = W_TEXT
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment         = Enum.TextXAlignment.Left
+    lbl.ZIndex                 = 9
+    local tag = Instance.new("TextLabel", f)
+    tag.Text                   = "FIRE"
+    tag.Size                   = UDim2.new(0, 38, 0, 22)
+    tag.Position               = UDim2.new(1, -46, 0.5, -11)
+    tag.Font                   = Enum.Font.GothamBold
+    tag.TextSize               = 9
+    tag.TextColor3             = W_ACCENT
+    tag.BackgroundTransparency = 1
+    tag.ZIndex                 = 9
+    btn.MouseButton1Click:Connect(function()
+        tag.TextColor3 = Color3.fromRGB(34, 197, 94)
+        task.spawn(function()
+            pcall(fn)
+        end)
+        task.delay(0.3, function()
+            tag.TextColor3 = W_ACCENT
+        end)
+    end)
+end
+
+AddFireButton(AdminPage, "TEST1", 3, function()
     game:GetService("ReplicatedStorage").Remotes.GiveDeathReward:FireServer()
 end)
 
-AddRapidToggle(AdminPage, "TEST2", 4, function()
+AddFireButton(AdminPage, "TEST2", 4, function()
     game:GetService("ReplicatedStorage").Remotes.FinishRewardClaimed:FireServer()
 end)
 
-AddRapidToggle(AdminPage, "Push", 5, function()
+AddFireButton(AdminPage, "Push", 5, function()
     game:GetService("ReplicatedStorage").Remotes.PushPlayer:InvokeServer()
 end)
 
-AddRapidToggle(AdminPage, "TEST3", 6, function()
+AddFireButton(AdminPage, "TEST3", 6, function()
     game:GetService("ReplicatedStorage").Remotes.ShowFinishRewardFrame:FireServer()
 end)
 
-AddRapidToggle(AdminPage, "TEST4", 7, function()
+AddFireButton(AdminPage, "TEST4", 7, function()
     game:GetService("ReplicatedStorage").Remotes.ServerMessageSent:FireServer()
 end)
 
-AddRapidToggle(AdminPage, "TEST5", 8, function()
+AddFireButton(AdminPage, "TEST5", 8, function()
     game:GetService("ReplicatedStorage").Remotes.FreeChestRewardClaimed:FireServer()
 end)
-
 
 
 -- =====================================================================
