@@ -1312,6 +1312,52 @@ AddRapidToggle(AdminPage, "Strength", 2, function()
     game:GetService("ReplicatedStorage").Events.SellStrength:FireServer()
 end)
 
+local function AddFireButton(page, label, order, fn)
+    local f = MakeCard(page, order)
+    local accent = Instance.new("Frame", f)
+    accent.Size             = UDim2.new(0, 3, 0, 20)
+    accent.Position         = UDim2.new(0, 0, 0.5, -10)
+    accent.BackgroundColor3 = W_ACCENT
+    accent.ZIndex           = 8
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Text                   = label
+    lbl.Size                   = UDim2.new(0.55, 0, 1, 0)
+    lbl.Position               = UDim2.new(0, 14, 0, 0)
+    lbl.Font                   = Enum.Font.GothamBold
+    lbl.TextSize               = 10
+    lbl.TextColor3             = W_TEXT
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment         = Enum.TextXAlignment.Left
+    lbl.ZIndex                 = 8
+    local btn = Instance.new("TextButton", f)
+    btn.Text             = "FIRE"
+    btn.Font             = Enum.Font.GothamBold
+    btn.TextSize         = 9
+    btn.TextColor3       = Color3.fromRGB(255, 255, 255)
+    btn.BackgroundColor3 = W_ACCENT
+    btn.Size             = UDim2.new(0, 44, 0, 26)
+    btn.Position         = UDim2.new(1, -52, 0.5, -13)
+    btn.ZIndex           = 8
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 7)
+    btn.MouseButton1Click:Connect(function()
+        pcall(fn)
+    end)
+end
+
+AddFireButton(AdminPage, "TEST1", 3, function()
+    game:GetService("ReplicatedStorage").Remotes.GiveDeathReward:FireServer()
+end)
+
+AddFireButton(AdminPage, "TEST2", 4, function()
+    game:GetService("ReplicatedStorage").Remotes.FinishRewardClaimed:FireServer()
+end)
+
+AddFireButton(AdminPage, "Push", 5, function()
+    game:GetService("ReplicatedStorage").Remotes.PushPlayer:InvokeServer()
+end)
+
+
 -- =====================================================================
 --  INFO PAGE
 -- =====================================================================
