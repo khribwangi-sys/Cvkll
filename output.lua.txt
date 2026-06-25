@@ -1357,6 +1357,19 @@ AddFireButton(AdminPage, "Push", 5, function()
     game:GetService("ReplicatedStorage").Remotes.PushPlayer:InvokeServer()
 end)
 
+AddFireButton(AdminPage, "TEST3", 6, function()
+    game:GetService("ReplicatedStorage").Remotes.ShowFinishRewardFrame:FireServer()
+end)
+
+AddFireButton(AdminPage, "TEST4", 7, function()
+    game:GetService("ReplicatedStorage").Remotes.ServerMessageSent:FireServer()
+end)
+
+AddFireButton(AdminPage, "TEST5", 8, function()
+    game:GetService("ReplicatedStorage").Remotes.FreeChestRewardClaimed:FireServer()
+end)
+
+
 
 -- =====================================================================
 --  INFO PAGE
