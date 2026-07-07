@@ -1,6 +1,6 @@
 local Settings = {
     ESP   = { Enabled = true, Skeleton = true, Box = true, Line = true, Name = true, Health = true, Thickness = 0.6, LinePos = "TOP" },
-    Aim   = { Aimbot = false, AimbotFOV = 150, AimbotSmooth = 0.2, HitboxExpander = false, HitboxSize = 10 },
+    Aim   = { Aimbot = false, HitboxExpander = false, HitboxSize = 10 },
     Other = { AttractPlayers = false, Fly = false, FlyHeight = 0, FlySpeed = 0 },
     CurrentTab = "ESP"
 }
@@ -93,129 +93,39 @@ end)
 --  AIMBOT
 -- =====================================================================
 
--- FOV circle: bright red ring in centre of screen
-local fovCircle        = Drawing.new("Circle")
-fovCircle.Visible      = false
-fovCircle.Filled       = false
-fovCircle.Color        = Color3.fromRGB(255, 50, 50)
-fovCircle.Thickness    = 2
-fovCircle.Transparency = 0          -- 0 = fully opaque in Drawing API
-fovCircle.Radius       = Settings.Aim.AimbotFOV
-fovCircle.Position     = Vector2.new(0, 0)
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Returns the closest visible, unobstructed Head inside FOV, or nil
-local function GetAimbotTarget()
-    local best, bestDist = nil, math.huge
-    local vp     = Camera.ViewportSize
-    local center = Vector2.new(vp.X / 2, vp.Y / 2)
+-- Auto-fire: sends ByteNetReliable packets to EVERY alive player every 0.15s
+-- when Aimbot is ON. No FOV limit. No LMB required.
+local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
+
+RunService.Heartbeat:Connect(function()
+    if not Settings.Aim.Aimbot then return end
+
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local head = p.Character:FindFirstChild("Head")
             local hum  = p.Character:FindFirstChildWhichIsA("Humanoid")
             if head and hum and hum.Health > 0 then
-                local sp, onScreen = Camera:WorldToViewportPoint(head.Position)
-                if onScreen and sp.Z > 0 then
-                    local dist = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                    if dist < Settings.Aim.AimbotFOV and dist < bestDist then
-                        -- Wall check
-                        local origin    = Camera.CFrame.Position
-                        local direction = head.Position - origin
-                        local rcp       = RaycastParams.new()
-                        rcp.FilterDescendantsInstances = { LocalPlayer.Character, p.Character }
-                        rcp.FilterType                 = Enum.RaycastFilterType.Exclude
-                        local hit = workspace:Raycast(origin, direction, rcp)
-                        if not hit then
-                            bestDist = dist
-                            best     = head
-                        end
-                    end
-                end
+                -- Packet 1: shoot trigger
+                pcall(function()
+                    ByteNetReliable:FireServer(
+                        buffer.fromstring("\028\001")
+                    )
+                end)
+                -- Packet 2: bullet data targeting this player's Head
+                pcall(function()
+                    ByteNetReliable:FireServer(
+                        buffer.fromstring("!\001\t@8C\167\t\208@\tm=\193\000 \0000c4fa8c3fb6c4b2ea1816db0c5e80f57%w\163E3\147\218A\000\020|HC\142f\169@l\235\003\194y\194\027?>Y9\189\240\212J\191\001\a\000Primary\002"),
+                        {
+                            p.Character, -- Model
+                            head,        -- Head part
+                        }
+                    )
+                end)
             end
         end
     end
-    return best
-end
-
--- Keep FOV circle updated every frame
-RunService.RenderStepped:Connect(function()
-    local vp     = Camera.ViewportSize
-    local center = Vector2.new(vp.X / 2, vp.Y / 2)
-    fovCircle.Visible  = Settings.Aim.Aimbot
-    fovCircle.Radius   = Settings.Aim.AimbotFOV
-    fovCircle.Position = center
-end)
-
--- Camera lock: switch to Scriptable while RMB held so game cannot override CFrame.
--- Released the instant the player lets go of RMB.
-local aimbotLocked = false
-RunService.RenderStepped:Connect(function()
-    if not Settings.Aim.Aimbot then
-        if aimbotLocked then
-            aimbotLocked        = false
-            Camera.CameraType   = Enum.CameraType.Custom
-        end
-        return
-    end
-    local rmb = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    if not rmb then
-        if aimbotLocked then
-            aimbotLocked      = false
-            Camera.CameraType = Enum.CameraType.Custom
-        end
-        return
-    end
-    local target = GetAimbotTarget()
-    if not target then
-        if aimbotLocked then
-            aimbotLocked      = false
-            Camera.CameraType = Enum.CameraType.Custom
-        end
-        return
-    end
-    -- Switch to Scriptable so the game stops overwriting our CFrame
-    if not aimbotLocked then
-        aimbotLocked      = true
-        Camera.CameraType = Enum.CameraType.Scriptable
-    end
-    local targetCF    = CFrame.new(Camera.CFrame.Position, target.Position)
-    Camera.CFrame     = Camera.CFrame:Lerp(targetCF, Settings.Aim.AimbotSmooth)
-end)
-
--- Auto-fire: fires ByteNetReliable packets at nearest target automatically
--- when Aimbot is ON. No LMB required. Cooldown = 0.15s between shots.
-local ByteNetReliable  = ReplicatedStorage:WaitForChild("ByteNetReliable")
-local autoFireCooldown = 0.15  -- seconds between shots (adjust to match gun fire-rate)
-local lastFireTime     = 0
-
-RunService.Heartbeat:Connect(function()
-    if not Settings.Aim.Aimbot then return end
-    local now = tick()
-    if (now - lastFireTime) < autoFireCooldown then return end
-
-    local target = GetAimbotTarget()
-    if not target then return end
-
-    lastFireTime = now
-
-    -- Packet 1: shoot trigger
-    pcall(function()
-        ByteNetReliable:FireServer(
-            buffer.fromstring("\028\001")
-        )
-    end)
-
-    -- Packet 2: bullet data with target model + part
-    pcall(function()
-        ByteNetReliable:FireServer(
-            buffer.fromstring("!\001\t@8C\167\t\208@\tm=\193\000 \0000c4fa8c3fb6c4b2ea1816db0c5e80f57%w\163E3\147\218A\000\020|HC\142f\169@l\235\003\194y\194\027?>Y9\189\240\212J\191\001\a\000Primary\002"),
-            {
-                target.Parent,   -- Model (character) of the target
-                target,          -- Part (Head)
-            }
-        )
-    end)
 end)
 
 -- =====================================================================
@@ -1063,10 +973,8 @@ AddSlider(EspPage,   "THICKNESS", 0.5, 3, Settings.ESP, "Thickness", 8)
 --  AIM PAGE
 -- =====================================================================
 AddToggle(AimPage, "AIMBOT",         Settings.Aim, "Aimbot",        1)
-AddSlider(AimPage, "AIMBOT FOV",  10, 500, Settings.Aim, "AimbotFOV",    2)
-AddSlider(AimPage, "SMOOTHNESS",   0.1, 1, Settings.Aim, "AimbotSmooth", 3)
-AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 4)
-AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 5)
+AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 2)
+AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 3)
 
 -- =====================================================================
 --  OTHER PAGE
