@@ -93,17 +93,19 @@ end)
 --  AIMBOT
 -- =====================================================================
 
--- FOV circle drawn in the center of the screen
-local fovCircle           = Drawing.new("Circle")
-fovCircle.Visible         = false
-fovCircle.Filled          = false
-fovCircle.Color           = Color3.fromRGB(255, 255, 255)
-fovCircle.Thickness       = 1
-fovCircle.Transparency    = 0.5
-fovCircle.NumSides        = 64
-fovCircle.Radius          = Settings.Aim.AimbotFOV
-fovCircle.Position        = Vector2.new(0, 0)
+-- FOV circle: bright red ring in centre of screen
+local fovCircle        = Drawing.new("Circle")
+fovCircle.Visible      = false
+fovCircle.Filled       = false
+fovCircle.Color        = Color3.fromRGB(255, 50, 50)
+fovCircle.Thickness    = 2
+fovCircle.Transparency = 0          -- 0 = fully opaque in Drawing API
+fovCircle.Radius       = Settings.Aim.AimbotFOV
+fovCircle.Position     = Vector2.new(0, 0)
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Returns the closest visible, unobstructed Head inside FOV, or nil
 local function GetAimbotTarget()
     local best, bestDist = nil, math.huge
     local vp     = Camera.ViewportSize
@@ -117,14 +119,14 @@ local function GetAimbotTarget()
                 if onScreen and sp.Z > 0 then
                     local dist = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                     if dist < Settings.Aim.AimbotFOV and dist < bestDist then
-                        -- Wall check: raycast from camera toward head
+                        -- Wall check
                         local origin    = Camera.CFrame.Position
                         local direction = head.Position - origin
-                        local rcp = RaycastParams.new()
+                        local rcp       = RaycastParams.new()
                         rcp.FilterDescendantsInstances = { LocalPlayer.Character, p.Character }
-                        rcp.FilterType = Enum.RaycastFilterType.Exclude
-                        local result = workspace:Raycast(origin, direction, rcp)
-                        if not result then
+                        rcp.FilterType                 = Enum.RaycastFilterType.Exclude
+                        local hit = workspace:Raycast(origin, direction, rcp)
+                        if not hit then
                             bestDist = dist
                             best     = head
                         end
@@ -136,28 +138,97 @@ local function GetAimbotTarget()
     return best
 end
 
--- Only locks camera when right mouse button is held (aim/scope).
--- Does NOT continuously follow; releases the moment RMB is released.
+-- Keep FOV circle updated every frame
 RunService.RenderStepped:Connect(function()
     local vp     = Camera.ViewportSize
     local center = Vector2.new(vp.X / 2, vp.Y / 2)
-
-    -- Update FOV circle
     fovCircle.Visible  = Settings.Aim.Aimbot
     fovCircle.Radius   = Settings.Aim.AimbotFOV
     fovCircle.Position = center
+end)
 
+-- Camera lock: switch to Scriptable while RMB held so game cannot override CFrame.
+-- Released the instant the player lets go of RMB.
+local aimbotLocked = false
+RunService.RenderStepped:Connect(function()
+    if not Settings.Aim.Aimbot then
+        if aimbotLocked then
+            aimbotLocked        = false
+            Camera.CameraType   = Enum.CameraType.Custom
+        end
+        return
+    end
+    local rmb = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+    if not rmb then
+        if aimbotLocked then
+            aimbotLocked      = false
+            Camera.CameraType = Enum.CameraType.Custom
+        end
+        return
+    end
+    local target = GetAimbotTarget()
+    if not target then
+        if aimbotLocked then
+            aimbotLocked      = false
+            Camera.CameraType = Enum.CameraType.Custom
+        end
+        return
+    end
+    -- Switch to Scriptable so the game stops overwriting our CFrame
+    if not aimbotLocked then
+        aimbotLocked      = true
+        Camera.CameraType = Enum.CameraType.Scriptable
+    end
+    local targetCF    = CFrame.new(Camera.CFrame.Position, target.Position)
+    Camera.CFrame     = Camera.CFrame:Lerp(targetCF, Settings.Aim.AimbotSmooth)
+end)
+
+-- Shooting: when LMB clicked with Aimbot ON, fire game RemoteEvents
+-- so the bullet registers as a headshot on the locked target.
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
     if not Settings.Aim.Aimbot then return end
-
-    -- Only activate while holding right-click (aiming / scoping)
-    local aiming = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    if not aiming then return end
-
     local target = GetAimbotTarget()
     if not target then return end
 
-    local targetCF = CFrame.new(Camera.CFrame.Position, target.Position)
-    Camera.CFrame  = Camera.CFrame:Lerp(targetCF, Settings.Aim.AimbotSmooth)
+    local camPos   = Camera.CFrame.Position
+    local headPos  = target.Position
+    local dir      = (headPos - camPos).Unit
+
+    -- Muzzle flash effect
+    pcall(function()
+        ReplicatedStorage
+            :WaitForChild("Events")
+            :WaitForChild("RemoteEvents")
+            :WaitForChild("CharacterMuzzleFlash")
+            :FireServer()
+    end)
+
+    -- Replicate bullet visual
+    pcall(function()
+        local bulletCF = CFrame.new(camPos, headPos)
+        ReplicatedStorage
+            :WaitForChild("Events")
+            :WaitForChild("RemoteEvents")
+            :WaitForChild("ReplicateFakeBullet")
+            :FireServer(bulletCF, dir)
+    end)
+
+    -- Register headshot damage
+    pcall(function()
+        ReplicatedStorage
+            :WaitForChild("SystemResources")
+            :WaitForChild("BufferCache")
+            :WaitForChild("RequestActionSync")
+            :FireServer({
+                direction   = dir,
+                hitPosition = headPos,
+                origin      = camPos,
+                hitInstance = target,
+                IsHeadshot  = true,
+            })
+    end)
 end)
 
 -- =====================================================================
