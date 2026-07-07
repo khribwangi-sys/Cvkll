@@ -1,6 +1,6 @@
 local Settings = {
     ESP   = { Enabled = true, Skeleton = true, Box = true, Line = true, Name = true, Health = true, Thickness = 0.6, LinePos = "TOP" },
-    Aim   = { A999 = false, HitboxExpander = false, HitboxSize = 10 },
+    Aim   = { A999 = false, Receive = false, HitboxExpander = false, HitboxSize = 10 },
     Other = { AttractPlayers = false, Fly = false, FlyHeight = 0, FlySpeed = 0 },
     CurrentTab = "ESP"
 }
@@ -99,7 +99,19 @@ local a999Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StepT
 RunService.Heartbeat:Connect(function()
     if not Settings.Aim.A999 then return end
     pcall(function()
-        a999Remote:FireServer(9999999999999999990009999999999, false)
+        a999Remote:FireServer(999999999999999999, false)
+    end)
+end)
+
+-- =====================================================================
+--  RECEIVE (ClaimReward spam)
+-- =====================================================================
+local claimRewardRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimReward")
+
+RunService.Heartbeat:Connect(function()
+    if not Settings.Aim.Receive then return end
+    pcall(function()
+        claimRewardRemote:FireServer()
     end)
 end)
 
@@ -947,8 +959,7 @@ AddSlider(EspPage,   "THICKNESS", 0.5, 3, Settings.ESP, "Thickness", 8)
 -- =====================================================================
 --  AIM PAGE
 -- =====================================================================
-AddToggle(AimPage, "A999",            Settings.Aim, "A999",          1)
-AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 2)
+AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 1)
 AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 3)
 
 -- =====================================================================
@@ -1300,6 +1311,9 @@ end
 AddRapidToggle(AdminPage, "Strength", 2, function()
     game:GetService("ReplicatedStorage").Events.SellStrength:FireServer()
 end)
+
+AddToggle(AdminPage, "A999",    Settings.Aim, "A999",    3)
+AddToggle(AdminPage, "RECEIVE", Settings.Aim, "Receive", 4)
 
 -- =====================================================================
 --  INFO PAGE
