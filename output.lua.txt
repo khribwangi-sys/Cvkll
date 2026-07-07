@@ -1,6 +1,6 @@
 local Settings = {
     ESP   = { Enabled = true, Skeleton = true, Box = true, Line = true, Name = true, Health = true, Thickness = 0.6, LinePos = "TOP" },
-    Aim   = { Aimbot = false, HitboxExpander = false, HitboxSize = 10 },
+    Aim   = { A999 = false, HitboxExpander = false, HitboxSize = 10 },
     Other = { AttractPlayers = false, Fly = false, FlyHeight = 0, FlySpeed = 0 },
     CurrentTab = "ESP"
 }
@@ -89,43 +89,18 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- =====================================================================
---  AIMBOT
--- =====================================================================
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Auto-fire: sends ByteNetReliable packets to EVERY alive player every 0.15s
--- when Aimbot is ON. No FOV limit. No LMB required.
-local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
+-- =====================================================================
+--  A999 (StepTaken spam)
+-- =====================================================================
+local a999Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StepTaken")
 
 RunService.Heartbeat:Connect(function()
-    if not Settings.Aim.Aimbot then return end
-
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local head = p.Character:FindFirstChild("Head")
-            local hum  = p.Character:FindFirstChildWhichIsA("Humanoid")
-            if head and hum and hum.Health > 0 then
-                -- Packet 1: shoot trigger
-                pcall(function()
-                    ByteNetReliable:FireServer(
-                        buffer.fromstring("\028\001")
-                    )
-                end)
-                -- Packet 2: bullet data targeting this player's Head
-                pcall(function()
-                    ByteNetReliable:FireServer(
-                        buffer.fromstring("!\001\t@8C\167\t\208@\tm=\193\000 \0000c4fa8c3fb6c4b2ea1816db0c5e80f57%w\163E3\147\218A\000\020|HC\142f\169@l\235\003\194y\194\027?>Y9\189\240\212J\191\001\a\000Primary\002"),
-                        {
-                            p.Character, -- Model
-                            head,        -- Head part
-                        }
-                    )
-                end)
-            end
-        end
-    end
+    if not Settings.Aim.A999 then return end
+    pcall(function()
+        a999Remote:FireServer(999999999999999999, false)
+    end)
 end)
 
 -- =====================================================================
@@ -972,7 +947,7 @@ AddSlider(EspPage,   "THICKNESS", 0.5, 3, Settings.ESP, "Thickness", 8)
 -- =====================================================================
 --  AIM PAGE
 -- =====================================================================
-AddToggle(AimPage, "AIMBOT",         Settings.Aim, "Aimbot",        1)
+AddToggle(AimPage, "A999",            Settings.Aim, "A999",          1)
 AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 2)
 AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 3)
 
