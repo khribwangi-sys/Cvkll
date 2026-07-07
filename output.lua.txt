@@ -56,7 +56,6 @@ local function VerifyKey(inputKey, callback)
         if ok and resp and resp.Success then
             local data = {}
             pcall(function() data = HttpService:JSONDecode(resp.Body) end)
-            -- server returns: { status: true, valid: true, expiry: "YYYY-MM-DD", mod_status: "active" }
             local valid  = (data.status == true) or (data.valid == true) or false
             local expiry = data.expiry or data.expire or data.expires or "—"
             callback(valid, expiry)
@@ -94,24 +93,24 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- =====================================================================
 --  A999 (StepTaken spam)
 -- =====================================================================
-local a999Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StepTaken")
-
 RunService.Heartbeat:Connect(function()
     if not Settings.Aim.A999 then return end
     pcall(function()
-        a999Remote:FireServer(999999999999999999, false)
+        ReplicatedStorage:FindFirstChild("Remotes")
+            :FindFirstChild("StepTaken")
+            :FireServer(999999999999999999, false)
     end)
 end)
 
 -- =====================================================================
 --  RECEIVE (ClaimReward spam)
 -- =====================================================================
-local claimRewardRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimReward")
-
 RunService.Heartbeat:Connect(function()
     if not Settings.Aim.Receive then return end
     pcall(function()
-        claimRewardRemote:FireServer()
+        ReplicatedStorage:FindFirstChild("Remotes")
+            :FindFirstChild("ClaimReward")
+            :FireServer()
     end)
 end)
 
@@ -451,99 +450,149 @@ Players.PlayerRemoving:Connect(function(p) DestroyESP(p) end)
 --  COLOUR PALETTE  —  CLEAN WHITE
 -- =====================================================================
 local W_BG       = Color3.fromRGB(255, 255, 255)
-local W_SURFACE  = Color3.fromRGB(248, 249, 253)
-local W_CARD     = Color3.fromRGB(252, 253, 255)
+local W_SURFACE  = Color3.fromRGB(245, 247, 252)
+local W_CARD     = Color3.fromRGB(250, 251, 255)
 local W_HEADER   = Color3.fromRGB(250, 251, 255)
-local W_SIDEBAR  = Color3.fromRGB(244, 246, 252)
-local W_STROKE   = Color3.fromRGB(214, 220, 236)
-local W_STROKE2  = Color3.fromRGB(190, 200, 225)
-local W_TEXT     = Color3.fromRGB(18,  22,  42)
-local W_MUTED    = Color3.fromRGB(100, 112, 148)
+local W_SIDEBAR  = Color3.fromRGB(240, 243, 252)
+local W_STROKE   = Color3.fromRGB(220, 226, 240)
+local W_STROKE2  = Color3.fromRGB(195, 206, 230)
+local W_TEXT     = Color3.fromRGB(15,  20,  40)
+local W_MUTED    = Color3.fromRGB(110, 122, 158)
 local W_ACCENT   = Color3.fromRGB(59,  130, 246)
 local W_ACCENT2  = Color3.fromRGB(37,  99,  235)
-local W_INACTIVE = Color3.fromRGB(200, 210, 228)
-local W_TRACK    = Color3.fromRGB(226, 230, 242)
+local W_INACTIVE = Color3.fromRGB(205, 214, 232)
+local W_TRACK    = Color3.fromRGB(228, 232, 245)
 local W_ON       = Color3.fromRGB(59,  130, 246)
 local W_ON_DARK  = Color3.fromRGB(29,  78,  216)
 
 -- =====================================================================
 --  SCREENGUI
 -- =====================================================================
-local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+local ScreenGui = Instance.new("ScreenGui")
+pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 ScreenGui.Name         = "AX"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 99
 
 -- =====================================================================
---  TOGGLE BUTTON  ("01")
+--  TOGGLE BUTTON  (floating pill, top-right)
 -- =====================================================================
+local ToggleShadow = Instance.new("Frame", ScreenGui)
+ToggleShadow.Size                   = UDim2.new(0, 52, 0, 52)
+ToggleShadow.Position               = UDim2.new(0.88, -3, 0.08, 3)
+ToggleShadow.BackgroundColor3       = Color3.fromRGB(30, 80, 200)
+ToggleShadow.BackgroundTransparency = 0.75
+ToggleShadow.ZIndex                 = 9
+ToggleShadow.Active                 = false
+Instance.new("UICorner", ToggleShadow).CornerRadius = UDim.new(0, 16)
+
 local ToggleBtn = Instance.new("TextButton", ScreenGui)
-ToggleBtn.Size                   = UDim2.new(0, 52, 0, 52)
-ToggleBtn.Position               = UDim2.new(0.88, 0, 0.12, 0)
-ToggleBtn.Text                   = "01"
+ToggleBtn.Size                   = UDim2.new(0, 46, 0, 46)
+ToggleBtn.Position               = UDim2.new(0.88, 0, 0.08, 0)
+ToggleBtn.Text                   = "AX"
 ToggleBtn.Font                   = Enum.Font.GothamBold
-ToggleBtn.TextSize               = 16
-ToggleBtn.TextColor3             = W_ACCENT
-ToggleBtn.BackgroundColor3       = W_BG
+ToggleBtn.TextSize               = 15
+ToggleBtn.TextColor3             = Color3.fromRGB(255, 255, 255)
+ToggleBtn.BackgroundColor3       = W_ACCENT
 ToggleBtn.BackgroundTransparency = 0
 ToggleBtn.Active                 = true
 ToggleBtn.Draggable              = true
 ToggleBtn.ZIndex                 = 10
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 14)
 local ToggleStroke = Instance.new("UIStroke", ToggleBtn)
-ToggleStroke.Color     = W_ACCENT
-ToggleStroke.Thickness = 2
+ToggleStroke.Color     = W_ACCENT2
+ToggleStroke.Thickness = 1.5
+
+ToggleBtn.MouseEnter:Connect(function()
+    TweenService:Create(ToggleBtn, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+        BackgroundColor3 = W_ACCENT2,
+        Size             = UDim2.new(0, 48, 0, 48),
+    }):Play()
+end)
+ToggleBtn.MouseLeave:Connect(function()
+    TweenService:Create(ToggleBtn, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+        BackgroundColor3 = W_ACCENT,
+        Size             = UDim2.new(0, 46, 0, 46),
+    }):Play()
+end)
 
 -- =====================================================================
---  LOGIN FRAME
+--  LOGIN FRAME  (centered card, clean & minimal)
 -- =====================================================================
+local LoginShadow = Instance.new("Frame", ScreenGui)
+LoginShadow.Size                   = UDim2.new(0, 400, 0, 300)
+LoginShadow.Position               = UDim2.new(0.5, -196, 0.5, -144)
+LoginShadow.BackgroundColor3       = Color3.fromRGB(20, 40, 120)
+LoginShadow.BackgroundTransparency = 0.82
+LoginShadow.Visible                = false
+LoginShadow.ZIndex                 = 19
+Instance.new("UICorner", LoginShadow).CornerRadius = UDim.new(0, 28)
+
 local LoginFrame = Instance.new("Frame", ScreenGui)
-LoginFrame.Size                   = UDim2.new(0, 360, 0, 220)
-LoginFrame.Position               = UDim2.new(0.5, -180, 0.5, -110)
+LoginFrame.Size                   = UDim2.new(0, 390, 0, 288)
+LoginFrame.Position               = UDim2.new(0.5, -195, 0.5, -144)
 LoginFrame.BackgroundColor3       = W_BG
 LoginFrame.BackgroundTransparency = 0
 LoginFrame.Visible                = false
 LoginFrame.ZIndex                 = 20
-Instance.new("UICorner", LoginFrame).CornerRadius = UDim.new(0, 18)
+Instance.new("UICorner", LoginFrame).CornerRadius = UDim.new(0, 22)
 local LoginStroke = Instance.new("UIStroke", LoginFrame)
-LoginStroke.Color     = W_ACCENT
-LoginStroke.Thickness = 2
+LoginStroke.Color           = W_STROKE
+LoginStroke.Thickness       = 1.5
+LoginStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
-local LoginHeader = Instance.new("Frame", LoginFrame)
-LoginHeader.Size                   = UDim2.new(1, 0, 0, 54)
-LoginHeader.BackgroundColor3       = W_ACCENT
-LoginHeader.BackgroundTransparency = 0
-LoginHeader.ZIndex                 = 21
-Instance.new("UICorner", LoginHeader).CornerRadius = UDim.new(0, 18)
+-- Logo badge centred at top of card
+local LogoBadge = Instance.new("Frame", LoginFrame)
+LogoBadge.Size             = UDim2.new(0, 52, 0, 52)
+LogoBadge.Position         = UDim2.new(0.5, -26, 0, -26)
+LogoBadge.BackgroundColor3 = W_ACCENT
+LogoBadge.ZIndex           = 22
+Instance.new("UICorner", LogoBadge).CornerRadius = UDim.new(0, 14)
+local LogoBadgeStroke = Instance.new("UIStroke", LogoBadge)
+LogoBadgeStroke.Color     = W_ACCENT2
+LogoBadgeStroke.Thickness = 2
+local LogoText = Instance.new("TextLabel", LogoBadge)
+LogoText.Text                   = "AX"
+LogoText.Size                   = UDim2.new(1, 0, 1, 0)
+LogoText.Font                   = Enum.Font.GothamBold
+LogoText.TextSize               = 18
+LogoText.TextColor3             = Color3.fromRGB(255, 255, 255)
+LogoText.BackgroundTransparency = 1
+LogoText.ZIndex                 = 23
 
-local LoginHeaderFix = Instance.new("Frame", LoginHeader)
-LoginHeaderFix.Size             = UDim2.new(1, 0, 0.5, 0)
-LoginHeaderFix.Position         = UDim2.new(0, 0, 0.5, 0)
-LoginHeaderFix.BackgroundColor3 = W_ACCENT
-LoginHeaderFix.ZIndex           = 21
-
-local LoginTitle = Instance.new("TextLabel", LoginHeader)
-LoginTitle.Text                   = "ACCESS KEY"
-LoginTitle.Size                   = UDim2.new(1, 0, 1, 0)
+local LoginTitle = Instance.new("TextLabel", LoginFrame)
+LoginTitle.Text                   = "Access Required"
+LoginTitle.Size                   = UDim2.new(1, -40, 0, 28)
+LoginTitle.Position               = UDim2.new(0, 20, 0, 38)
 LoginTitle.Font                   = Enum.Font.GothamBold
-LoginTitle.TextSize               = 15
-LoginTitle.TextColor3             = Color3.fromRGB(255, 255, 255)
+LoginTitle.TextSize               = 17
+LoginTitle.TextColor3             = W_TEXT
 LoginTitle.BackgroundTransparency = 1
-LoginTitle.ZIndex                 = 22
+LoginTitle.TextXAlignment         = Enum.TextXAlignment.Center
+LoginTitle.ZIndex                 = 21
 
 local LoginSub = Instance.new("TextLabel", LoginFrame)
-LoginSub.Text                   = "Enter your license key to continue"
-LoginSub.Size                   = UDim2.new(1, -30, 0, 24)
-LoginSub.Position               = UDim2.new(0, 15, 0, 62)
+LoginSub.Text                   = "Enter your license key below"
+LoginSub.Size                   = UDim2.new(1, -40, 0, 20)
+LoginSub.Position               = UDim2.new(0, 20, 0, 68)
 LoginSub.Font                   = Enum.Font.Gotham
 LoginSub.TextSize               = 11
 LoginSub.TextColor3             = W_MUTED
 LoginSub.BackgroundTransparency = 1
+LoginSub.TextXAlignment         = Enum.TextXAlignment.Center
 LoginSub.ZIndex                 = 21
 
+-- Divider line
+local LoginDiv = Instance.new("Frame", LoginFrame)
+LoginDiv.Size             = UDim2.new(1, -40, 0, 1)
+LoginDiv.Position         = UDim2.new(0, 20, 0, 96)
+LoginDiv.BackgroundColor3 = W_STROKE
+LoginDiv.ZIndex           = 21
+
 local LoginBox = Instance.new("TextBox", LoginFrame)
-LoginBox.Size                   = UDim2.new(1, -30, 0, 38)
-LoginBox.Position               = UDim2.new(0, 15, 0, 94)
+LoginBox.Size                   = UDim2.new(1, -40, 0, 42)
+LoginBox.Position               = UDim2.new(0, 20, 0, 108)
 LoginBox.PlaceholderText        = "XXXX-XXXX-XXXX-XXXX"
 LoginBox.Text                   = ""
 LoginBox.Font                   = Enum.Font.GothamBold
@@ -554,126 +603,211 @@ LoginBox.BackgroundColor3       = W_SURFACE
 LoginBox.BackgroundTransparency = 0
 LoginBox.ClearTextOnFocus       = false
 LoginBox.ZIndex                 = 22
-Instance.new("UICorner", LoginBox).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", LoginBox).CornerRadius = UDim.new(0, 12)
 local LBStroke = Instance.new("UIStroke", LoginBox)
 LBStroke.Color     = W_STROKE2
 LBStroke.Thickness = 1.5
 local LBPad = Instance.new("UIPadding", LoginBox)
-LBPad.PaddingLeft  = UDim.new(0, 12)
-LBPad.PaddingRight = UDim.new(0, 12)
+LBPad.PaddingLeft  = UDim.new(0, 14)
+LBPad.PaddingRight = UDim.new(0, 14)
+
+-- Focus glow on input
+LoginBox.Focused:Connect(function()
+    TweenService:Create(LBStroke, TweenInfo.new(0.18), { Color = W_ACCENT, Thickness = 2 }):Play()
+end)
+LoginBox.FocusLost:Connect(function()
+    TweenService:Create(LBStroke, TweenInfo.new(0.18), { Color = W_STROKE2, Thickness = 1.5 }):Play()
+end)
 
 local LoginStatus = Instance.new("TextLabel", LoginFrame)
 LoginStatus.Text                   = ""
-LoginStatus.Size                   = UDim2.new(1, -30, 0, 18)
-LoginStatus.Position               = UDim2.new(0, 15, 0, 138)
+LoginStatus.Size                   = UDim2.new(1, -40, 0, 18)
+LoginStatus.Position               = UDim2.new(0, 20, 0, 158)
 LoginStatus.Font                   = Enum.Font.Gotham
 LoginStatus.TextSize               = 11
 LoginStatus.TextColor3             = Color3.fromRGB(220, 50, 50)
 LoginStatus.BackgroundTransparency = 1
+LoginStatus.TextXAlignment         = Enum.TextXAlignment.Center
 LoginStatus.ZIndex                 = 21
 
 local LoginBtn = Instance.new("TextButton", LoginFrame)
-LoginBtn.Text                   = "VERIFY"
-LoginBtn.Size                   = UDim2.new(1, -30, 0, 38)
-LoginBtn.Position               = UDim2.new(0, 15, 0, 162)
+LoginBtn.Text                   = "VERIFY KEY"
+LoginBtn.Size                   = UDim2.new(1, -40, 0, 44)
+LoginBtn.Position               = UDim2.new(0, 20, 0, 184)
 LoginBtn.Font                   = Enum.Font.GothamBold
 LoginBtn.TextSize               = 13
 LoginBtn.TextColor3             = Color3.fromRGB(255, 255, 255)
 LoginBtn.BackgroundColor3       = W_ACCENT
 LoginBtn.BackgroundTransparency = 0
 LoginBtn.ZIndex                 = 22
-Instance.new("UICorner", LoginBtn).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", LoginBtn).CornerRadius = UDim.new(0, 12)
+
+LoginBtn.MouseEnter:Connect(function()
+    TweenService:Create(LoginBtn, TweenInfo.new(0.15), { BackgroundColor3 = W_ACCENT2 }):Play()
+end)
+LoginBtn.MouseLeave:Connect(function()
+    TweenService:Create(LoginBtn, TweenInfo.new(0.15), { BackgroundColor3 = W_ACCENT }):Play()
+end)
+
+local LoginDisclaimer = Instance.new("TextLabel", LoginFrame)
+LoginDisclaimer.Text                   = "Key is tied to your HWID"
+LoginDisclaimer.Size                   = UDim2.new(1, -40, 0, 16)
+LoginDisclaimer.Position               = UDim2.new(0, 20, 0, 236)
+LoginDisclaimer.Font                   = Enum.Font.Gotham
+LoginDisclaimer.TextSize               = 10
+LoginDisclaimer.TextColor3             = W_INACTIVE
+LoginDisclaimer.BackgroundTransparency = 1
+LoginDisclaimer.TextXAlignment         = Enum.TextXAlignment.Center
+LoginDisclaimer.ZIndex                 = 21
 
 -- =====================================================================
 --  MAIN FRAME
 -- =====================================================================
+local Shadow = Instance.new("Frame", ScreenGui)
+Shadow.Size                   = UDim2.new(0, 486, 0, 382)
+Shadow.Position               = UDim2.new(0.5, -239, 0.5, -187)
+Shadow.BackgroundColor3       = Color3.fromRGB(15, 30, 100)
+Shadow.BackgroundTransparency = 0.80
+Shadow.Visible                = false
+Shadow.ZIndex                 = 4
+Shadow.Active                 = false
+Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 26)
+
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size                   = UDim2.new(0, 450, 0, 350)
-MainFrame.Position               = UDim2.new(0.5, -225, 0.5, -175)
+MainFrame.Size                   = UDim2.new(0, 474, 0, 368)
+MainFrame.Position               = UDim2.new(0.5, -237, 0.5, -184)
 MainFrame.BackgroundColor3       = W_BG
 MainFrame.BackgroundTransparency = 0
 MainFrame.Visible                = false
 MainFrame.Active                 = true
 MainFrame.Draggable              = true
 MainFrame.ZIndex                 = 5
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 18)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 22)
 local MainStroke = Instance.new("UIStroke", MainFrame)
-MainStroke.Thickness       = 2
-MainStroke.Color           = W_STROKE2
+MainStroke.Thickness       = 1.5
+MainStroke.Color           = W_STROKE
 MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
--- Drop shadow layer
-local Shadow = Instance.new("Frame", ScreenGui)
-Shadow.Size                   = UDim2.new(0, 470, 0, 370)
-Shadow.Position               = UDim2.new(0.5, -235, 0.5, -182)
-Shadow.BackgroundColor3       = Color3.fromRGB(18, 22, 60)
-Shadow.BackgroundTransparency = 0.88
-Shadow.Visible                = false
-Shadow.ZIndex                 = 4
-Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 22)
 
 -- =====================================================================
 --  HEADER
 -- =====================================================================
 local Header = Instance.new("Frame", MainFrame)
-Header.Size                   = UDim2.new(1, 0, 0, 46)
-Header.BackgroundTransparency = 1
-Header.ZIndex                 = 6
+Header.Size             = UDim2.new(1, 0, 0, 52)
+Header.BackgroundColor3 = W_BG
+Header.BackgroundTransparency = 0
+Header.ZIndex           = 6
+Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 22)
 
+-- Header bottom fill to square off bottom corners
+local HeaderFill = Instance.new("Frame", Header)
+HeaderFill.Size             = UDim2.new(1, 0, 0.5, 0)
+HeaderFill.Position         = UDim2.new(0, 0, 0.5, 0)
+HeaderFill.BackgroundColor3 = W_BG
+HeaderFill.ZIndex           = 6
+
+-- Thin separator under header
+local HeaderLine = Instance.new("Frame", MainFrame)
+HeaderLine.Size             = UDim2.new(1, -32, 0, 1)
+HeaderLine.Position         = UDim2.new(0, 16, 0, 52)
+HeaderLine.BackgroundColor3 = W_STROKE
+HeaderLine.ZIndex           = 6
+
+-- Logo badge in header
+local HeaderBadge = Instance.new("Frame", Header)
+HeaderBadge.Size             = UDim2.new(0, 32, 0, 32)
+HeaderBadge.Position         = UDim2.new(0, 14, 0.5, -16)
+HeaderBadge.BackgroundColor3 = W_ACCENT
+HeaderBadge.ZIndex           = 7
+Instance.new("UICorner", HeaderBadge).CornerRadius = UDim.new(0, 9)
+local HeaderBadgeText = Instance.new("TextLabel", HeaderBadge)
+HeaderBadgeText.Text                   = "AX"
+HeaderBadgeText.Size                   = UDim2.new(1, 0, 1, 0)
+HeaderBadgeText.Font                   = Enum.Font.GothamBold
+HeaderBadgeText.TextSize               = 12
+HeaderBadgeText.TextColor3             = Color3.fromRGB(255, 255, 255)
+HeaderBadgeText.BackgroundTransparency = 1
+HeaderBadgeText.ZIndex                 = 8
 
 local TitleLabel = Instance.new("TextLabel", Header)
-TitleLabel.Text                   = "AX"
-TitleLabel.Size                   = UDim2.new(0, 80, 1, 0)
-TitleLabel.Position               = UDim2.new(0, 18, 0, 0)
+TitleLabel.Text                   = "AX Menu"
+TitleLabel.Size                   = UDim2.new(0, 140, 1, 0)
+TitleLabel.Position               = UDim2.new(0, 54, 0, 0)
 TitleLabel.Font                   = Enum.Font.GothamBold
-TitleLabel.TextSize               = 16
-TitleLabel.TextColor3             = W_ACCENT
+TitleLabel.TextSize               = 14
+TitleLabel.TextColor3             = W_TEXT
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
 TitleLabel.ZIndex                 = 7
 
+local VersionTag = Instance.new("TextLabel", Header)
+VersionTag.Text                   = "v2.0"
+VersionTag.Size                   = UDim2.new(0, 40, 0, 20)
+VersionTag.Position               = UDim2.new(0, 196, 0.5, -10)
+VersionTag.Font                   = Enum.Font.Gotham
+VersionTag.TextSize               = 10
+VersionTag.TextColor3             = W_MUTED
+VersionTag.BackgroundColor3       = W_SURFACE
+VersionTag.BackgroundTransparency = 0
+VersionTag.ZIndex                 = 7
+Instance.new("UICorner", VersionTag).CornerRadius = UDim.new(0, 6)
+
 local CloseBtn = Instance.new("TextButton", Header)
-CloseBtn.Text                   = "x"
-CloseBtn.Size                   = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position               = UDim2.new(1, -38, 0.5, -15)
+CloseBtn.Text                   = "✕"
+CloseBtn.Size                   = UDim2.new(0, 32, 0, 32)
+CloseBtn.Position               = UDim2.new(1, -46, 0.5, -16)
 CloseBtn.Font                   = Enum.Font.GothamBold
 CloseBtn.TextColor3             = W_MUTED
-CloseBtn.TextSize               = 18
+CloseBtn.TextSize               = 14
 CloseBtn.BackgroundColor3       = W_SURFACE
 CloseBtn.BackgroundTransparency = 0
 CloseBtn.ZIndex                 = 8
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 10)
 local CloseStroke = Instance.new("UIStroke", CloseBtn)
 CloseStroke.Color     = W_STROKE
 CloseStroke.Thickness = 1
+
+CloseBtn.MouseEnter:Connect(function()
+    TweenService:Create(CloseBtn, TweenInfo.new(0.15), {
+        BackgroundColor3 = Color3.fromRGB(255, 80, 80),
+        TextColor3       = Color3.fromRGB(255, 255, 255),
+    }):Play()
+end)
+CloseBtn.MouseLeave:Connect(function()
+    TweenService:Create(CloseBtn, TweenInfo.new(0.15), {
+        BackgroundColor3 = W_SURFACE,
+        TextColor3       = W_MUTED,
+    }):Play()
+end)
 
 -- =====================================================================
 --  SIDEBAR
 -- =====================================================================
 local Sidebar = Instance.new("Frame", MainFrame)
-Sidebar.Size                   = UDim2.new(0, 96, 1, -54)
-Sidebar.Position               = UDim2.new(0, 6, 0, 48)
+Sidebar.Size                   = UDim2.new(0, 90, 1, -68)
+Sidebar.Position               = UDim2.new(0, 8, 0, 60)
 Sidebar.BackgroundColor3       = W_SIDEBAR
 Sidebar.BackgroundTransparency = 0
 Sidebar.ZIndex                 = 6
-Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 14)
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 16)
 local SidebarStroke = Instance.new("UIStroke", Sidebar)
 SidebarStroke.Color     = W_STROKE
 SidebarStroke.Thickness = 1
 
 local SidebarList = Instance.new("UIListLayout", Sidebar)
-SidebarList.Padding             = UDim.new(0, 5)
+SidebarList.Padding             = UDim.new(0, 4)
 SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 SidebarList.VerticalAlignment   = Enum.VerticalAlignment.Top
 local SidebarPad = Instance.new("UIPadding", Sidebar)
-SidebarPad.PaddingTop = UDim.new(0, 8)
+SidebarPad.PaddingTop  = UDim.new(0, 8)
+SidebarPad.PaddingLeft = UDim.new(0, 6)
+SidebarPad.PaddingRight= UDim.new(0, 6)
 
 -- =====================================================================
 --  CONTENT CONTAINER
 -- =====================================================================
 local Container = Instance.new("Frame", MainFrame)
-Container.Size                   = UDim2.new(1, -114, 1, -54)
-Container.Position               = UDim2.new(0, 108, 0, 50)
+Container.Size                   = UDim2.new(1, -110, 1, -68)
+Container.Position               = UDim2.new(0, 106, 0, 60)
 Container.BackgroundTransparency = 1
 Container.ClipsDescendants       = true
 Container.ZIndex                 = 6
@@ -685,17 +819,18 @@ local function CreatePage(tabName)
     page.BackgroundTransparency = 1
     page.AutomaticCanvasSize    = Enum.AutomaticSize.Y
     page.CanvasSize             = UDim2.new(0, 0, 0, 0)
-    page.ScrollBarThickness     = 3
-    page.ScrollBarImageColor3   = W_ACCENT
+    page.ScrollBarThickness     = 2
+    page.ScrollBarImageColor3   = W_STROKE2
     page.ScrollingDirection     = Enum.ScrollingDirection.Y
     page.Visible                = false
     page.ZIndex                 = 6
     local layout = Instance.new("UIListLayout", page)
-    layout.Padding   = UDim.new(0, 5)
+    layout.Padding   = UDim.new(0, 6)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     local pad = Instance.new("UIPadding", page)
-    pad.PaddingTop   = UDim.new(0, 6)
-    pad.PaddingRight = UDim.new(0, 8)
+    pad.PaddingTop    = UDim.new(0, 6)
+    pad.PaddingRight  = UDim.new(0, 8)
+    pad.PaddingBottom = UDim.new(0, 8)
     Pages[tabName] = page
     return page
 end
@@ -707,7 +842,7 @@ local AdminPage = CreatePage("TEST")
 local InfoPage  = CreatePage("INFO")
 
 -- =====================================================================
---  TAB SWITCHING  (with smooth slide animation)
+--  TAB SWITCHING
 -- =====================================================================
 local TabButtons = {}
 local function SwitchTab(tabName)
@@ -717,60 +852,73 @@ local function SwitchTab(tabName)
     end
     for name, btn in pairs(TabButtons) do
         if name == tabName then
-            TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
-                BackgroundColor3 = W_ACCENT,
-                TextColor3       = Color3.fromRGB(255, 255, 255),
+            TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundColor3     = W_ACCENT,
+                TextColor3           = Color3.fromRGB(255, 255, 255),
+                BackgroundTransparency = 0,
             }):Play()
             local s = btn:FindFirstChildOfClass("UIStroke")
-            if s then s.Color = W_ACCENT end
+            if s then s.Thickness = 0 end
         else
-            TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {
-                BackgroundColor3 = W_SIDEBAR,
-                TextColor3       = W_MUTED,
+            TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundColor3     = W_SIDEBAR,
+                TextColor3           = W_MUTED,
+                BackgroundTransparency = 0,
             }):Play()
             local s = btn:FindFirstChildOfClass("UIStroke")
-            if s then s.Color = W_STROKE end
+            if s then s.Thickness = 0 end
         end
     end
 end
 
 local function AddTabButton(name, icon, label)
     local btn = Instance.new("TextButton", Sidebar)
-    btn.Size             = UDim2.new(0, 82, 0, 36)
-    btn.Text             = icon .. "\n" .. label
-    btn.Font             = Enum.Font.GothamBold
-    btn.TextSize         = 9
-    btn.TextXAlignment   = Enum.TextXAlignment.Center
-    btn.TextColor3       = W_MUTED
-    btn.BackgroundColor3 = W_SIDEBAR
+    btn.Size                   = UDim2.new(1, 0, 0, 40)
+    btn.Text                   = icon .. "  " .. label
+    btn.Font                   = Enum.Font.GothamBold
+    btn.TextSize               = 10
+    btn.TextXAlignment         = Enum.TextXAlignment.Center
+    btn.TextColor3             = W_MUTED
+    btn.BackgroundColor3       = W_SIDEBAR
     btn.BackgroundTransparency = 0
-    btn.ZIndex           = 7
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-    local s = Instance.new("UIStroke", btn)
-    s.Color     = W_STROKE
-    s.Thickness = 1
+    btn.ZIndex                 = 7
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 12)
+
+    btn.MouseEnter:Connect(function()
+        if Settings.CurrentTab ~= name then
+            TweenService:Create(btn, TweenInfo.new(0.12), {
+                BackgroundColor3 = W_STROKE,
+            }):Play()
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if Settings.CurrentTab ~= name then
+            TweenService:Create(btn, TweenInfo.new(0.12), {
+                BackgroundColor3 = W_SIDEBAR,
+            }):Play()
+        end
+    end)
     btn.MouseButton1Click:Connect(function() SwitchTab(name) end)
     TabButtons[name] = btn
 end
 
--- Special characters per menu (not emojis)
-AddTabButton("ESP",   "◈",  "ESP")
-AddTabButton("AIM",   "⊕",  "AIM")
-AddTabButton("OTHER", "≋",  "OTHER")
-AddTabButton("TEST",  "◆",  "TEST")
-AddTabButton("INFO",  "◉",  "INFO")
+AddTabButton("ESP",   "◈", "ESP")
+AddTabButton("AIM",   "⊕", "AIM")
+AddTabButton("OTHER", "≋", "OTHER")
+AddTabButton("TEST",  "◆", "TEST")
+AddTabButton("INFO",  "◉", "INFO")
 
 -- =====================================================================
 --  WIDGET HELPERS
 -- =====================================================================
 local function MakeCard(page, order)
     local f = Instance.new("Frame", page)
-    f.Size                   = UDim2.new(1, -4, 0, 40)
+    f.Size                   = UDim2.new(1, -4, 0, 44)
     f.BackgroundColor3       = W_CARD
     f.BackgroundTransparency = 0
     f.ZIndex                 = 7
     f.LayoutOrder            = order or 0
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 10)
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
     local s = Instance.new("UIStroke", f)
     s.Color     = W_STROKE
     s.Thickness = 1
@@ -779,50 +927,60 @@ end
 
 local function AddToggle(page, name, target, key, order)
     local f = MakeCard(page, order)
-    local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 20)
-    accent.Position         = UDim2.new(0, 0, 0.5, -10)
-    accent.BackgroundColor3 = W_INACTIVE
-    accent.ZIndex           = 8
-    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+    -- Left accent dot
+    local dot = Instance.new("Frame", f)
+    dot.Size             = UDim2.new(0, 4, 0, 22)
+    dot.Position         = UDim2.new(0, 0, 0.5, -11)
+    dot.BackgroundColor3 = W_INACTIVE
+    dot.ZIndex           = 8
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
     local TL = Instance.new("TextLabel", f)
     TL.Text                   = name
-    TL.Size                   = UDim2.new(0.65, 0, 1, 0)
-    TL.Position               = UDim2.new(0, 14, 0, 0)
+    TL.Size                   = UDim2.new(0.6, 0, 1, 0)
+    TL.Position               = UDim2.new(0, 18, 0, 0)
     TL.Font                   = Enum.Font.GothamBold
-    TL.TextSize               = 10
+    TL.TextSize               = 11
     TL.TextColor3             = W_TEXT
     TL.BackgroundTransparency = 1
     TL.TextXAlignment         = Enum.TextXAlignment.Left
     TL.ZIndex                 = 8
+
+    -- Toggle track
     local Track = Instance.new("Frame", f)
-    Track.Size             = UDim2.new(0, 38, 0, 20)
-    Track.Position         = UDim2.new(1, -46, 0.5, -10)
+    Track.Size             = UDim2.new(0, 42, 0, 24)
+    Track.Position         = UDim2.new(1, -52, 0.5, -12)
     Track.BackgroundColor3 = target[key] and W_ON or W_TRACK
     Track.ZIndex           = 8
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
+
     local Knob = Instance.new("Frame", Track)
-    Knob.Size             = UDim2.new(0, 14, 0, 14)
-    Knob.Position         = target[key] and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+    Knob.Size             = UDim2.new(0, 18, 0, 18)
+    Knob.Position         = target[key] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
     Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Knob.ZIndex           = 9
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
     local KS = Instance.new("UIStroke", Knob)
-    KS.Color     = W_STROKE
+    KS.Color     = Color3.fromRGB(220, 228, 245)
     KS.Thickness = 0.5
+
     local function Refresh()
         local on = target[key]
-        TweenService:Create(Track, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+        TweenService:Create(Track, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
             BackgroundColor3 = on and W_ON or W_TRACK,
         }):Play()
-        TweenService:Create(Knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
-            Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+        TweenService:Create(Knob, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Position = on and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9),
         }):Play()
-        accent.BackgroundColor3 = on and W_ACCENT or W_INACTIVE
+        TweenService:Create(dot, TweenInfo.new(0.2), {
+            BackgroundColor3 = on and W_ACCENT or W_INACTIVE,
+        }):Play()
     end
+
     Track.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            target[key] = not target[key]; Refresh()
+            target[key] = not target[key]
+            Refresh()
         end
     end)
     Refresh()
@@ -842,37 +1000,53 @@ end)
 
 local function AddSlider(page, name, minVal, maxVal, target, key, order)
     local f = MakeCard(page, order)
-    f.Size = UDim2.new(1, -4, 0, 50)
-    local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 20)
-    accent.Position         = UDim2.new(0, 0, 0, 8)
-    accent.BackgroundColor3 = W_ACCENT
-    accent.ZIndex           = 8
-    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+    f.Size = UDim2.new(1, -4, 0, 54)
+
+    local dot = Instance.new("Frame", f)
+    dot.Size             = UDim2.new(0, 4, 0, 22)
+    dot.Position         = UDim2.new(0, 0, 0, 8)
+    dot.BackgroundColor3 = W_ACCENT
+    dot.ZIndex           = 8
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
     local LT = Instance.new("TextLabel", f)
-    LT.Text                   = name .. ":  " .. target[key]
-    LT.Size                   = UDim2.new(1, -14, 0, 22)
-    LT.Position               = UDim2.new(0, 14, 0, 4)
+    LT.Text                   = name
+    LT.Size                   = UDim2.new(0.6, 0, 0, 24)
+    LT.Position               = UDim2.new(0, 18, 0, 4)
     LT.Font                   = Enum.Font.GothamBold
-    LT.TextSize               = 10
+    LT.TextSize               = 11
     LT.TextColor3             = W_TEXT
     LT.BackgroundTransparency = 1
     LT.TextXAlignment         = Enum.TextXAlignment.Left
     LT.ZIndex                 = 8
+
+    local ValTag = Instance.new("TextLabel", f)
+    ValTag.Text                   = tostring(target[key])
+    ValTag.Size                   = UDim2.new(0, 46, 0, 24)
+    ValTag.Position               = UDim2.new(1, -52, 0, 4)
+    ValTag.Font                   = Enum.Font.GothamBold
+    ValTag.TextSize               = 11
+    ValTag.TextColor3             = W_ACCENT
+    ValTag.BackgroundTransparency = 1
+    ValTag.TextXAlignment         = Enum.TextXAlignment.Right
+    ValTag.ZIndex                 = 8
+
     local TrackBg = Instance.new("Frame", f)
-    TrackBg.Size             = UDim2.new(1, -20, 0, 8)
-    TrackBg.Position         = UDim2.new(0, 10, 0, 34)
+    TrackBg.Size             = UDim2.new(1, -24, 0, 6)
+    TrackBg.Position         = UDim2.new(0, 12, 0, 38)
     TrackBg.BackgroundColor3 = W_TRACK
     TrackBg.ZIndex           = 8
     Instance.new("UICorner", TrackBg).CornerRadius = UDim.new(1, 0)
+
     local pctInit = (target[key] - minVal) / math.max(maxVal - minVal, 1)
     local Fill = Instance.new("Frame", TrackBg)
     Fill.Size             = UDim2.new(pctInit, 0, 1, 0)
     Fill.BackgroundColor3 = W_ACCENT
     Fill.ZIndex           = 9
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+
     local Knob = Instance.new("Frame", TrackBg)
-    Knob.Size             = UDim2.new(0, 18, 0, 18)
+    Knob.Size             = UDim2.new(0, 16, 0, 16)
     Knob.AnchorPoint      = Vector2.new(0.5, 0.5)
     Knob.Position         = UDim2.new(pctInit, 0, 0.5, 0)
     Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -880,18 +1054,22 @@ local function AddSlider(page, name, minVal, maxVal, target, key, order)
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
     local KnobStroke = Instance.new("UIStroke", Knob)
     KnobStroke.Color     = W_ACCENT
-    KnobStroke.Thickness = 1.5
+    KnobStroke.Thickness = 2
+
     local HitBox = Instance.new("TextButton", f)
-    HitBox.Size                   = UDim2.new(1, -20, 0, 36)
-    HitBox.Position               = UDim2.new(0, 10, 0, 16)
+    HitBox.Size                   = UDim2.new(1, -24, 0, 28)
+    HitBox.Position               = UDim2.new(0, 12, 0, 26)
     HitBox.BackgroundTransparency = 1
     HitBox.Text                   = ""
     HitBox.ZIndex                 = 11
+
     local function Set(ip)
         local pct = math.clamp((ip.X - TrackBg.AbsolutePosition.X) / TrackBg.AbsoluteSize.X, 0, 1)
-        local val = maxVal <= 10 and (math.floor(pct * (maxVal - minVal) * 10 + minVal * 10) / 10) or math.floor(minVal + pct * (maxVal - minVal))
+        local val = maxVal <= 10
+            and (math.floor(pct * (maxVal - minVal) * 10 + minVal * 10) / 10)
+            or math.floor(minVal + pct * (maxVal - minVal))
         target[key]   = val
-        LT.Text       = name .. ":  " .. val
+        ValTag.Text   = tostring(val)
         Fill.Size     = UDim2.new(pct, 0, 1, 0)
         Knob.Position = UDim2.new(pct, 0, 0.5, 0)
     end
@@ -909,37 +1087,51 @@ end
 
 local function AddSelector(page, name, options, target, key, order)
     local f = MakeCard(page, order)
-    local accent = Instance.new("Frame", f)
-    accent.Size             = UDim2.new(0, 3, 0, 20)
-    accent.Position         = UDim2.new(0, 0, 0.5, -10)
-    accent.BackgroundColor3 = W_ACCENT
-    accent.ZIndex           = 8
-    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+
+    local dot = Instance.new("Frame", f)
+    dot.Size             = UDim2.new(0, 4, 0, 22)
+    dot.Position         = UDim2.new(0, 0, 0.5, -11)
+    dot.BackgroundColor3 = W_ACCENT
+    dot.ZIndex           = 8
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
     local TL = Instance.new("TextLabel", f)
     TL.Text                   = name
-    TL.Size                   = UDim2.new(0.48, 0, 1, 0)
-    TL.Position               = UDim2.new(0, 14, 0, 0)
+    TL.Size                   = UDim2.new(0.46, 0, 1, 0)
+    TL.Position               = UDim2.new(0, 18, 0, 0)
     TL.Font                   = Enum.Font.GothamBold
-    TL.TextSize               = 10
+    TL.TextSize               = 11
     TL.TextColor3             = W_TEXT
     TL.BackgroundTransparency = 1
     TL.TextXAlignment         = Enum.TextXAlignment.Left
     TL.ZIndex                 = 8
+
     local Btn = Instance.new("TextButton", f)
     Btn.Font             = Enum.Font.GothamBold
-    Btn.TextSize         = 9
+    Btn.TextSize         = 10
     Btn.TextColor3       = W_ACCENT
     Btn.BackgroundColor3 = W_SURFACE
-    Btn.Size             = UDim2.new(0, 88, 0, 24)
-    Btn.Position         = UDim2.new(1, -94, 0.5, -12)
+    Btn.Size             = UDim2.new(0, 96, 0, 28)
+    Btn.Position         = UDim2.new(1, -104, 0.5, -14)
     Btn.ZIndex           = 8
-    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 7)
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
     local BS = Instance.new("UIStroke", Btn)
     BS.Color     = W_STROKE
     BS.Thickness = 1
+
+    Btn.MouseEnter:Connect(function()
+        TweenService:Create(Btn, TweenInfo.new(0.12), { BackgroundColor3 = W_STROKE }):Play()
+    end)
+    Btn.MouseLeave:Connect(function()
+        TweenService:Create(Btn, TweenInfo.new(0.12), { BackgroundColor3 = W_SURFACE }):Play()
+    end)
+
     local idx = 1
     for i, v in ipairs(options) do if target[key] == v then idx = i; break end end
-    local function Upd() target[key] = options[idx]; Btn.Text = "< " .. options[idx] .. " >" end
+    local function Upd()
+        target[key] = options[idx]
+        Btn.Text    = "‹ " .. options[idx] .. " ›"
+    end
     Btn.MouseButton1Click:Connect(function() idx = (idx % #options) + 1; Upd() end)
     Upd()
 end
@@ -1377,34 +1569,59 @@ local menuOpen = false
 
 local function OpenMenu()
     menuOpen = true
-    MainFrame.Size    = UDim2.new(0, 450, 0, 0)
-    MainFrame.Visible = true
-    Shadow.Visible    = true
-    TweenService:Create(MainFrame, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 450, 0, 350),
+    MainFrame.Size                   = UDim2.new(0, 474, 0, 0)
+    MainFrame.BackgroundTransparency = 0.3
+    MainFrame.Visible                = true
+    Shadow.BackgroundTransparency    = 1
+    Shadow.Visible                   = true
+    TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size                   = UDim2.new(0, 474, 0, 368),
+        BackgroundTransparency = 0,
     }):Play()
-    TweenService:Create(Shadow, TweenInfo.new(0.32, Enum.EasingStyle.Quad), {
-        BackgroundTransparency = 0.88,
+    TweenService:Create(Shadow, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        BackgroundTransparency = 0.80,
     }):Play()
 end
 
 local function CloseMenu()
     menuOpen = false
     TweenService:Create(MainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        Size = UDim2.new(0, 450, 0, 0),
+        Size                   = UDim2.new(0, 474, 0, 0),
+        BackgroundTransparency = 0.3,
     }):Play()
     TweenService:Create(Shadow, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {
         BackgroundTransparency = 1,
     }):Play()
-    task.delay(0.24, function()
+    task.delay(0.25, function()
         MainFrame.Visible = false
         Shadow.Visible    = false
     end)
 end
 
+local function ShowLogin()
+    LoginShadow.Visible = true
+    LoginFrame.Visible  = true
+    LoginFrame.Size     = UDim2.new(0, 390, 0, 0)
+    LoginFrame.BackgroundTransparency = 0.3
+    TweenService:Create(LoginFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size                   = UDim2.new(0, 390, 0, 288),
+        BackgroundTransparency = 0,
+    }):Play()
+end
+
+local function HideLogin()
+    TweenService:Create(LoginFrame, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 390, 0, 0),
+    }):Play()
+    task.delay(0.2, function()
+        LoginFrame.Visible  = false
+        LoginShadow.Visible = false
+    end)
+end
+
 ToggleBtn.MouseButton1Click:Connect(function()
     if not keyValid then
-        LoginFrame.Visible = not LoginFrame.Visible
+        if LoginFrame.Visible then HideLogin() else ShowLogin() end
         return
     end
     if menuOpen then CloseMenu() else OpenMenu() end
@@ -1424,8 +1641,8 @@ local function OnKeyVerified(valid, expiry)
     statusRow.Text      = valid and "Active" or "Invalid"
     statusRow.TextColor3 = valid and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(239, 68, 68)
     if valid then
-        LoginFrame.Visible  = false
-        LoginStatus.Text    = ""
+        HideLogin()
+        LoginStatus.Text = ""
         OpenMenu()
     else
         LoginStatus.Text = "Invalid key. Please check and try again."
@@ -1464,12 +1681,12 @@ task.spawn(function()
         VerifyKey(stored, function(valid, expiry)
             OnKeyVerified(valid, expiry)
             if not valid then
-                LoginFrame.Visible = true
-                LoginStatus.Text   = "Saved key expired. Enter a new key."
+                ShowLogin()
+                LoginStatus.Text = "Saved key expired. Enter a new key."
             end
         end)
     else
-        LoginFrame.Visible = true
+        ShowLogin()
     end
 end)
 
