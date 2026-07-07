@@ -1,6 +1,6 @@
 local Settings = {
     ESP   = { Enabled = true, Skeleton = true, Box = true, Line = true, Name = true, Health = true, Thickness = 0.6, LinePos = "TOP" },
-    Aim   = { SilentAim = false, HitboxExpander = false, HitboxSize = 10 },
+    Aim   = { Aimbot = false, AimbotFOV = 150, AimbotSmooth = 0.2, HitboxExpander = false, HitboxSize = 10 },
     Other = { AttractPlayers = false, Fly = false, FlyHeight = 0, FlySpeed = 0 },
     CurrentTab = "ESP"
 }
@@ -90,28 +90,46 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 -- =====================================================================
---  SILENT AIM
+--  AIMBOT
 -- =====================================================================
-local oldIndex
-oldIndex = hookmetamethod(game, "__index", function(self, key)
-    if Settings.Aim.SilentAim and typeof(self) == "Instance" and self:IsA("Mouse") and key == "Hit" then
-        local best, bestDist = nil, math.huge
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                local root = p.Character:FindFirstChild("HumanoidRootPart")
-                local hum  = p.Character:FindFirstChild("Humanoid")
-                if root and hum and hum.Health > 0 then
-                    local sp, onScreen = Camera:WorldToViewportPoint(root.Position)
-                    if onScreen then
-                        local d = (Vector2.new(sp.X, sp.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).Magnitude
-                        if d < bestDist then bestDist = d; best = root end
+local function GetAimbotTarget()
+    local best, bestDist = nil, math.huge
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local head = p.Character:FindFirstChild("Head")
+            local hum  = p.Character:FindFirstChildWhichIsA("Humanoid")
+            if head and hum and hum.Health > 0 then
+                local sp, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen and sp.Z > 0 then
+                    local screenPos = Vector2.new(sp.X, sp.Y)
+                    local dist = (screenPos - center).Magnitude
+                    if dist < Settings.Aim.AimbotFOV and dist < bestDist then
+                        -- Wall check: raycast from camera to head, excluding local and target character
+                        local origin    = Camera.CFrame.Position
+                        local direction = head.Position - origin
+                        local rcp = RaycastParams.new()
+                        rcp.FilterDescendantsInstances = { LocalPlayer.Character, p.Character }
+                        rcp.FilterType = Enum.RaycastFilterType.Exclude
+                        local result = workspace:Raycast(origin, direction, rcp)
+                        if not result then
+                            bestDist = dist
+                            best     = head
+                        end
                     end
                 end
             end
         end
-        if best then return best.CFrame end
     end
-    return oldIndex(self, key)
+    return best
+end
+
+RunService.RenderStepped:Connect(function()
+    if not Settings.Aim.Aimbot then return end
+    local target = GetAimbotTarget()
+    if not target then return end
+    local targetCF = CFrame.new(Camera.CFrame.Position, target.Position)
+    Camera.CFrame  = Camera.CFrame:Lerp(targetCF, Settings.Aim.AimbotSmooth)
 end)
 
 -- =====================================================================
@@ -632,7 +650,7 @@ TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
 TitleLabel.ZIndex                 = 7
 
 local CloseBtn = Instance.new("TextButton", Header)
-CloseBtn.Text                   = "×"
+CloseBtn.Text                   = "x"
 CloseBtn.Size                   = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position               = UDim2.new(1, -38, 0.5, -15)
 CloseBtn.Font                   = Enum.Font.GothamBold
@@ -958,9 +976,11 @@ AddSlider(EspPage,   "THICKNESS", 0.5, 3, Settings.ESP, "Thickness", 8)
 -- =====================================================================
 --  AIM PAGE
 -- =====================================================================
-AddToggle(AimPage, "SILENT AIM",      Settings.Aim, "SilentAim",      1)
-AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 2)
-AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 3)
+AddToggle(AimPage, "AIMBOT",         Settings.Aim, "Aimbot",        1)
+AddSlider(AimPage, "AIMBOT FOV",  10, 500, Settings.Aim, "AimbotFOV",    2)
+AddSlider(AimPage, "SMOOTHNESS",   0.1, 1, Settings.Aim, "AimbotSmooth", 3)
+AddToggle(AimPage, "HITBOX EXPANDER", Settings.Aim, "HitboxExpander", 4)
+AddSlider(AimPage, "HITBOX SIZE",  1, 30, Settings.Aim, "HitboxSize", 5)
 
 -- =====================================================================
 --  OTHER PAGE
