@@ -99,7 +99,7 @@ local a999Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("StepT
 RunService.Heartbeat:Connect(function()
     if not Settings.Aim.A999 then return end
     pcall(function()
-        a999Remote:FireServer(999999999999999999, false)
+        a999Remote:FireServer(9999999999999999990009999999999, false)
     end)
 end)
 
