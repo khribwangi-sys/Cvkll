@@ -183,51 +183,38 @@ RunService.RenderStepped:Connect(function()
     Camera.CFrame     = Camera.CFrame:Lerp(targetCF, Settings.Aim.AimbotSmooth)
 end)
 
--- Shooting: when LMB clicked with Aimbot ON, fire game RemoteEvents
--- so the bullet registers as a headshot on the locked target.
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+-- Auto-fire: fires ByteNetReliable packets at nearest target automatically
+-- when Aimbot is ON. No LMB required. Cooldown = 0.15s between shots.
+local ByteNetReliable  = ReplicatedStorage:WaitForChild("ByteNetReliable")
+local autoFireCooldown = 0.15  -- seconds between shots (adjust to match gun fire-rate)
+local lastFireTime     = 0
+
+RunService.Heartbeat:Connect(function()
     if not Settings.Aim.Aimbot then return end
+    local now = tick()
+    if (now - lastFireTime) < autoFireCooldown then return end
+
     local target = GetAimbotTarget()
     if not target then return end
 
-    local camPos   = Camera.CFrame.Position
-    local headPos  = target.Position
-    local dir      = (headPos - camPos).Unit
+    lastFireTime = now
 
-    -- Muzzle flash effect
+    -- Packet 1: shoot trigger
     pcall(function()
-        ReplicatedStorage
-            :WaitForChild("Events")
-            :WaitForChild("RemoteEvents")
-            :WaitForChild("CharacterMuzzleFlash")
-            :FireServer()
+        ByteNetReliable:FireServer(
+            buffer.fromstring("\028\001")
+        )
     end)
 
-    -- Replicate bullet visual
+    -- Packet 2: bullet data with target model + part
     pcall(function()
-        local bulletCF = CFrame.new(camPos, headPos)
-        ReplicatedStorage
-            :WaitForChild("Events")
-            :WaitForChild("RemoteEvents")
-            :WaitForChild("ReplicateFakeBullet")
-            :FireServer(bulletCF, dir)
-    end)
-
-    -- Register headshot damage
-    pcall(function()
-        ReplicatedStorage
-            :WaitForChild("SystemResources")
-            :WaitForChild("BufferCache")
-            :WaitForChild("RequestActionSync")
-            :FireServer({
-                direction   = dir,
-                hitPosition = headPos,
-                origin      = camPos,
-                hitInstance = target,
-                IsHeadshot  = true,
-            })
+        ByteNetReliable:FireServer(
+            buffer.fromstring("!\001\t@8C\167\t\208@\tm=\193\000 \0000c4fa8c3fb6c4b2ea1816db0c5e80f57%w\163E3\147\218A\000\020|HC\142f\169@l\235\003\194y\194\027?>Y9\189\240\212J\191\001\a\000Primary\002"),
+            {
+                target.Parent,   -- Model (character) of the target
+                target,          -- Part (Head)
+            }
+        )
     end)
 end)
 
