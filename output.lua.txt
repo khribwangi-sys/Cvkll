@@ -490,7 +490,7 @@ ToggleBtn.ZIndex                 = 10
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 local ToggleBtnImg = Instance.new("ImageLabel", ToggleBtn)
 ToggleBtnImg.Size                   = UDim2.new(1, 0, 1, 0)
-ToggleBtnImg.Image                  = "https://img2.pic.in.th/a70d674f69b71f52996733aa6dd8f2aa.webp"
+ToggleBtnImg.Image                  = "rbxassetid://116039201006260"
 ToggleBtnImg.BackgroundTransparency = 1
 ToggleBtnImg.ScaleType              = Enum.ScaleType.Crop
 ToggleBtnImg.Active                 = false
@@ -702,7 +702,7 @@ Instance.new("UICorner", HeaderBadge).CornerRadius = UDim.new(0, 9)
 
 local HeaderBadgeImg = Instance.new("ImageLabel", HeaderBadge)
 HeaderBadgeImg.Size                   = UDim2.new(1, 0, 1, 0)
-HeaderBadgeImg.Image                  = "https://img2.pic.in.th/a70d674f69b71f52996733aa6dd8f2aa.webp"
+HeaderBadgeImg.Image                  = "rbxassetid://116039201006260"
 HeaderBadgeImg.BackgroundTransparency = 1
 HeaderBadgeImg.ScaleType              = Enum.ScaleType.Crop
 HeaderBadgeImg.Active                 = false
