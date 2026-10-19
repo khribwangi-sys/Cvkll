@@ -751,22 +751,84 @@ local function descAnim(v)
     props(v, { "AnimationId" }, I)
 end
 
+
+------------------------------------------------------------------
+-- STATUS (ข้อความบนจอ บอกความคืบหน้า - ใช้ภาษาอังกฤษกันฟอนต์เพี้ยน)
+------------------------------------------------------------------
+local statusLabel
+local function setStatus(text)
+    print("[Dumper] " .. text)
+    if not CONFIG.SHOW_GUI_MESSAGE then return end
+    pcall(function()
+        if not statusLabel or not statusLabel.Parent then
+            local gui = Instance.new("ScreenGui")
+            gui.Name = "DumpMessageGUI"
+            gui.ResetOnSpawn = false
+            gui.Parent = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
+
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(0, 400, 0, 80)
+            label.Position = UDim2.new(0.5, -200, 0.85, -40)
+            label.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            label.TextWrapped = true
+            label.Font = Enum.Font.SourceSansBold
+            label.TextSize = 16
+            label.ZIndex = 10
+            label.Parent = gui
+            statusLabel = label
+        end
+        statusLabel.Text = text
+    end)
+end
+
+------------------------------------------------------------------
+-- REMOTES จัดกลุ่มตามโฟลเดอร์ (อ่านง่ายเวลามีหลายร้อยตัว)
+------------------------------------------------------------------
+local function writeRemotesByFolder(list)
+    section("6a. REMOTES จัดกลุ่มตามโฟลเดอร์  (E=Event  F=Function  U=Unreliable  b=Bindable)")
+    local groups, order = {}, {}
+    for _, r in ipairs(list) do
+        local par = r.Parent
+        local key = par and getPath(par) or "nil"
+        if not groups[key] then
+            groups[key] = {}
+            order[#order + 1] = key
+        end
+        local cn = r.ClassName
+        local tag = (cn == "RemoteEvent" and "E") or (cn == "RemoteFunction" and "F") or (cn == "UnreliableRemoteEvent" and "U") or "b"
+        table.insert(groups[key], r.Name .. "(" .. tag .. ")")
+    end
+    table.sort(order)
+    for _, key in ipairs(order) do
+        local names = groups[key]
+        w("")
+        w(key .. "  [" .. #names .. "]")
+        w(I .. table.concat(names, ", "))
+        yieldMaybe()
+    end
+end
+
 ------------------------------------------------------------------
 -- MAIN
 ------------------------------------------------------------------
 local savedPath, finalStatus
 
+-- รันแต่ละหมวดแยกกัน: หมวดไหนพัง หมวดอื่นยังทำงานต่อ
+local function run(name, fn, ...)
+    local okR, errR = pcall(fn, ...)
+    if not okR then
+        w("")
+        w("!!! หมวด [" .. name .. "] ผิดพลาด: " .. tostring(errR))
+        warn("[Dumper] section " .. name .. " failed: " .. tostring(errR))
+    end
+end
+
 local function main()
     myPos = getRootPos()
+    setStatus("1/4 Preparing file...")
 
-    -- 1) สแกนทั้งเกม
-    for _, svc in ipairs(game:GetChildren()) do
-        if not CONFIG.SKIP_SERVICES[svc.Name] then
-            scanService(svc)
-        end
-    end
-
-    -- 2) เตรียมไฟล์
+    -- 1) เตรียมไฟล์ก่อนสแกน (จะได้รู้ทันทีว่าเซฟได้ไหม)
     local info
     local okI, res = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
     if okI then info = res end
@@ -778,32 +840,48 @@ local function main()
         fileName = "Dump_" .. gname .. "_" .. tostring(game.PlaceId) .. "_" .. os.date("%Y%m%d_%H%M%S") .. ".txt"
     end
     Out.path = chooseOutputPath(fileName)
+    if Out.path then
+        print("[Dumper] output file: " .. Out.path)
+    else
+        warn("[Dumper] writefile ใช้ไม่ได้ จะคัดลอกลง clipboard แทนตอนจบ")
+    end
 
-    -- 3) เขียนข้อมูลทั้งหมด
     w(string.rep("#", 72))
     w("# Remote & Map Dumper v2")
     w("# Game : " .. tostring((info and info.Name) or "?") .. "  (PlaceId " .. tostring(game.PlaceId) .. ")")
     w("# Time : " .. os.date("%Y-%m-%d %H:%M:%S"))
     w(string.rep("#", 72))
 
-    writeGameInfo(info)
-    writeLocalPlayer()
-    writePlayersAndTeams()
-    writeWorldSettings()
-    writeClassSummary()
-    writeRemotes(B.remotes)
-    listSection("7. VALUE OBJECTS", B.values, descValue)
-    writeAttributes(B.attrs)
-    listSection("9a. PROXIMITY PROMPTS", B.prompts, descPrompt)
-    listSection("9b. CLICK DETECTORS", B.clicks, descClick)
-    listSection("9c. TOUCH INTERESTS (ชิ้นส่วนที่ตอบสนองเมื่อสัมผัส)", B.touch, descTouch)
-    listSection("9d. TOOLS", B.tools, descTool)
-    listSection("9e. GUI BUTTONS (PlayerGui)", B.buttons, descButton)
-    listSection("9f. SEATS / VEHICLE SEATS", B.seats, descSeat)
-    listSection("9g. SPAWN LOCATIONS", B.spawns, descSpawn)
-    listSection("9h. ANIMATIONS", B.anims, descAnim)
-    listSection("10. SCRIPTS (Script / LocalScript / ModuleScript)", B.scripts, descScript)
-    if CONFIG.DUMP_TREE then writeTree() end
+    -- 2) สแกนทั้งเกม
+    setStatus("2/4 Scanning game... (may take a while)")
+    for _, svc in ipairs(game:GetChildren()) do
+        if not CONFIG.SKIP_SERVICES[svc.Name] then
+            local okS, errS = pcall(scanService, svc)
+            if not okS then warn("[Dumper] scan " .. svc.Name .. " failed: " .. tostring(errS)) end
+        end
+    end
+
+    -- 3) เขียนข้อมูลทั้งหมด
+    setStatus("3/4 Writing data... (" .. totalDesc .. " instances)")
+    run("1 game info",      writeGameInfo, info)
+    run("2 local player",   writeLocalPlayer)
+    run("3 players/teams",  writePlayersAndTeams)
+    run("4 world settings", writeWorldSettings)
+    run("5 class summary",  writeClassSummary)
+    run("6a remotes folder", writeRemotesByFolder, B.remotes)
+    run("6 remotes",        writeRemotes, B.remotes)
+    run("7 values",         listSection, "7. VALUE OBJECTS", B.values, descValue)
+    run("8 attributes",     writeAttributes, B.attrs)
+    run("9a prompts",       listSection, "9a. PROXIMITY PROMPTS", B.prompts, descPrompt)
+    run("9b clickers",      listSection, "9b. CLICK DETECTORS", B.clicks, descClick)
+    run("9c touch",         listSection, "9c. TOUCH INTERESTS (ชิ้นส่วนที่ตอบสนองเมื่อสัมผัส)", B.touch, descTouch)
+    run("9d tools",         listSection, "9d. TOOLS", B.tools, descTool)
+    run("9e buttons",       listSection, "9e. GUI BUTTONS (PlayerGui)", B.buttons, descButton)
+    run("9f seats",         listSection, "9f. SEATS / VEHICLE SEATS", B.seats, descSeat)
+    run("9g spawns",        listSection, "9g. SPAWN LOCATIONS", B.spawns, descSpawn)
+    run("9h animations",    listSection, "9h. ANIMATIONS", B.anims, descAnim)
+    run("10 scripts",       listSection, "10. SCRIPTS (Script / LocalScript / ModuleScript)", B.scripts, descScript)
+    if CONFIG.DUMP_TREE then run("11 tree", writeTree) end
 
     section("END")
     w("Remotes: " .. #B.remotes .. " | Values: " .. #B.values .. " | Prompts: " .. #B.prompts
@@ -819,6 +897,7 @@ if not ok then
 end
 
 -- 4) จบงาน: เขียนส่วนที่เหลือ / สำรองด้วย clipboard
+setStatus("4/4 Saving...")
 if Out.path and Out.canAppend then
     flush(true)
     savedPath = Out.path
@@ -827,36 +906,28 @@ elseif Out.path and not Out.canAppend and writefile then
     if okW then savedPath = Out.path end
 end
 
+-- อ่านไฟล์กลับมาเช็คว่ามีจริงและมีข้อมูล
+local verify = ""
+if savedPath and readfile then
+    local okR, content = pcall(readfile, savedPath)
+    if okR and type(content) == "string" then
+        verify = ", " .. #content .. " bytes"
+    else
+        verify = ", (cannot read back)"
+    end
+end
+
 if savedPath then
-    finalStatus = "Saved: " .. savedPath .. " (" .. Out.lines .. " lines)"
+    finalStatus = "DONE. Saved: " .. savedPath .. " (" .. Out.lines .. " lines" .. verify .. ")"
 elseif setclipboard then
     pcall(setclipboard, table.concat(Out.buf, "\n"))
-    finalStatus = "เซฟไฟล์ไม่ได้ -> คัดลอกลง clipboard แทน (" .. Out.lines .. " lines)"
+    finalStatus = "Could not save file -> copied to clipboard (" .. Out.lines .. " lines)"
 else
-    finalStatus = "เซฟไฟล์/คัดลอกไม่ได้ executor ไม่รองรับ writefile และ setclipboard"
+    finalStatus = "FAILED: executor has no writefile and no setclipboard"
 end
+if not ok then finalStatus = finalStatus .. "  [had errors, see file/console]" end
 
-print("[Dumper] " .. finalStatus)
-
-if CONFIG.SHOW_GUI_MESSAGE then
-    pcall(function()
-        local gui = Instance.new("ScreenGui")
-        gui.Name = "DumpMessageGUI"
-        gui.ResetOnSpawn = false
-        gui.Parent = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(0, 380, 0, 70)
-        label.Position = UDim2.new(0.5, -190, 0.9, -35)
-        label.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        label.Text = finalStatus
-        label.TextWrapped = true
-        label.Font = Enum.Font.SourceSansBold
-        label.TextSize = 16
-        label.ZIndex = 10
-        label.Parent = gui
-
-        Debris:AddItem(gui, 8)
-    end)
-end
+setStatus(finalStatus)
+task.delay(20, function()
+    pcall(function() statusLabel.Parent:Destroy() end)
+end)
