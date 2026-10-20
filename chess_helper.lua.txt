@@ -355,6 +355,16 @@ end
 local searchDeadline = 0
 local searchNodes = 0
 
+local function checkSearchTime()
+    searchNodes = searchNodes + 1
+    if searchNodes % 256 == 0 and task and task.wait then
+        task.wait()
+    end
+    if searchNodes % 64 == 0 and os.clock() >= searchDeadline then
+        error("SEARCH_TIMEOUT", 0)
+    end
+end
+
 local function moveOrderScore(state, move)
     local mover = math.abs(state.board[move.fy][move.fx])
     local target = state.board[move.ty][move.tx]
@@ -374,11 +384,71 @@ local function moveOrderScore(state, move)
     return score
 end
 
-local function search(state, depth, alpha, beta, ply)
-    searchNodes = searchNodes + 1
-    if searchNodes % 64 == 0 and os.clock() >= searchDeadline then
-        error("SEARCH_TIMEOUT", 0)
+local quiescence
+
+quiescence = function(state, alpha, beta, ply, qDepth)
+    checkSearchTime()
+    local white = state.whiteToMove
+    local inCheck = isInCheck(state, white)
+    local perspective = white and 1 or -1
+    local standPat = evaluate(state) * perspective
+    if not inCheck then
+        if standPat >= beta then
+            return standPat
+        end
+        if standPat > alpha then
+            alpha = standPat
+        end
+        if qDepth <= 0 then
+            return standPat
+        end
+    elseif qDepth <= -2 then
+        return standPat
     end
+
+    local moves = legalMoves(state, white)
+    if #moves == 0 then
+        if inCheck then
+            return -MATE + ply
+        end
+        return 0
+    end
+
+    if not inCheck then
+        local captures = {}
+        for _, move in ipairs(moves) do
+            if state.board[move.ty][move.tx] ~= EMPTY or move.enPassant or move.promotion then
+                table.insert(captures, move)
+            end
+        end
+        moves = captures
+        if #moves == 0 then
+            return standPat
+        end
+    end
+
+    table.sort(moves, function(a, b)
+        return moveOrderScore(state, a) > moveOrderScore(state, b)
+    end)
+    local bestScore = inCheck and -INF or standPat
+    for _, move in ipairs(moves) do
+        local child = applyMove(state, move)
+        local score = -quiescence(child, -beta, -alpha, ply + 1, qDepth - 1)
+        if score > bestScore then
+            bestScore = score
+        end
+        if score > alpha then
+            alpha = score
+        end
+        if alpha >= beta then
+            break
+        end
+    end
+    return bestScore
+end
+
+local function search(state, depth, alpha, beta, ply)
+    checkSearchTime()
     local moves = legalMoves(state, state.whiteToMove)
     if #moves == 0 then
         if isInCheck(state, state.whiteToMove) then
@@ -387,8 +457,7 @@ local function search(state, depth, alpha, beta, ply)
         return 0, {}
     end
     if depth == 0 then
-        local perspective = state.whiteToMove and 1 or -1
-        return evaluate(state) * perspective, {}
+        return quiescence(state, alpha, beta, ply, 5), {}
     end
     table.sort(moves, function(a, b)
         return moveOrderScore(state, a) > moveOrderScore(state, b)
@@ -426,9 +495,9 @@ local function bestLineFor(state)
     end)
     local bestLine = {available[1]}
     local bestScore = 0
-    for depth = 1, 3 do
-        searchDeadline = os.clock() + 0.9
-        searchNodes = 0
+    searchDeadline = os.clock() + 1.35
+    searchNodes = 0
+    for depth = 1, 5 do
         local ok, score, line = pcall(function()
             return search(state, depth, -INF, INF, 0)
         end)
@@ -459,6 +528,14 @@ local function lineName(line)
         table.insert(chunks, tostring(index) .. ". " .. moveName(move))
     end
     return table.concat(chunks, "   ")
+end
+
+local function scoreName(score)
+    if math.abs(score) >= MATE - 100 then
+        local plies = MATE - math.abs(score)
+        return "รุกฆาตในประมาณ " .. tostring(math.max(1, math.ceil(plies / 2))) .. " เดิน"
+    end
+    return "ประเมิน " .. string.format("%+.1f", score / 100) .. " (มุมมองฝ่ายที่เดิน)"
 end
 
 local function blankBoard()
@@ -1056,11 +1133,15 @@ requestHint = function()
     refreshPanel()
     moveLabel.Text = "กำลังค้นหาหมากที่ดีที่สุด..."
     task.spawn(function()
-        local line = bestLineFor(state)
+        local searchedSignature = acceptedSignature
+        local line, score = bestLineFor(state)
         calculating = false
+        if searchedSignature ~= acceptedSignature then
+            return
+        end
         displayedLine = line
         if line and line[1] then
-            moveLabel.Text = "เดิน " .. moveName(line[1]) .. "\nต่อไป:\n" .. lineName(line)
+            moveLabel.Text = "เดิน " .. moveName(line[1]) .. "\n" .. scoreName(score) .. "\nต่อไป:\n" .. lineName(line)
             showMove(line[1])
         else
             moveLabel.Text = "ไม่พบหมากที่เดินได้จากตำแหน่งนี้"
