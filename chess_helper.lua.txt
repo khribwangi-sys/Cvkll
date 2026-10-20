@@ -1,0 +1,800 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local oldGui = playerGui:FindFirstChild("ChessHelperLocal")
+if oldGui then
+    oldGui:Destroy()
+end
+
+local EMPTY = 0
+local PAWN = 1
+local KNIGHT = 2
+local BISHOP = 3
+local ROOK = 4
+local QUEEN = 5
+local KING = 6
+local INF = math.huge
+local MATE = 100000
+local FILES = {"a", "b", "c", "d", "e", "f", "g", "h"}
+local SYMBOLS = {
+    [1] = "♙",
+    [2] = "♘",
+    [3] = "♗",
+    [4] = "♖",
+    [5] = "♕",
+    [6] = "♔",
+    [-1] = "♟",
+    [-2] = "♞",
+    [-3] = "♝",
+    [-4] = "♜",
+    [-5] = "♛",
+    [-6] = "♚"
+}
+local VALUES = {[PAWN] = 100, [KNIGHT] = 320, [BISHOP] = 335, [ROOK] = 500, [QUEEN] = 900, [KING] = 0}
+local KNIGHT_STEPS = {{1, 2}, {2, 1}, {2, -1}, {1, -2}, {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2}}
+local KING_STEPS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}}
+local RAYS = {
+    {1, 0, false}, {-1, 0, false}, {0, 1, false}, {0, -1, false},
+    {1, 1, true}, {1, -1, true}, {-1, 1, true}, {-1, -1, true}
+}
+
+local function inside(x, y)
+    return x >= 1 and x <= 8 and y >= 1 and y <= 8
+end
+
+local function sign(value)
+    if value > 0 then
+        return 1
+    elseif value < 0 then
+        return -1
+    end
+    return 0
+end
+
+local function pieceAt(state, x, y)
+    if not inside(x, y) then
+        return EMPTY
+    end
+    return state.board[y][x]
+end
+
+local function newGame()
+    local board = {}
+    for y = 1, 8 do
+        board[y] = {}
+        for x = 1, 8 do
+            board[y][x] = EMPTY
+        end
+    end
+    local back = {ROOK, KNIGHT, BISHOP, QUEEN, KING, BISHOP, KNIGHT, ROOK}
+    for x = 1, 8 do
+        board[1][x] = back[x]
+        board[2][x] = PAWN
+        board[7][x] = -PAWN
+        board[8][x] = -back[x]
+    end
+    return {
+        board = board,
+        whiteToMove = true,
+        castling = {wk = true, wq = true, bk = true, bq = true},
+        epX = nil,
+        epY = nil
+    }
+end
+
+local function copyState(state)
+    local board = {}
+    for y = 1, 8 do
+        board[y] = {}
+        for x = 1, 8 do
+            board[y][x] = state.board[y][x]
+        end
+    end
+    return {
+        board = board,
+        whiteToMove = state.whiteToMove,
+        castling = {
+            wk = state.castling.wk,
+            wq = state.castling.wq,
+            bk = state.castling.bk,
+            bq = state.castling.bq
+        },
+        epX = state.epX,
+        epY = state.epY
+    }
+end
+
+local function isSquareAttacked(state, x, y, byWhite)
+    local attacker = byWhite and 1 or -1
+    local pawnDirection = byWhite and 1 or -1
+    local pawnSourceY = y - pawnDirection
+    if pieceAt(state, x - 1, pawnSourceY) == attacker * PAWN or pieceAt(state, x + 1, pawnSourceY) == attacker * PAWN then
+        return true
+    end
+    for _, step in ipairs(KNIGHT_STEPS) do
+        if pieceAt(state, x + step[1], y + step[2]) == attacker * KNIGHT then
+            return true
+        end
+    end
+    for _, step in ipairs(KING_STEPS) do
+        if pieceAt(state, x + step[1], y + step[2]) == attacker * KING then
+            return true
+        end
+    end
+    for _, ray in ipairs(RAYS) do
+        local dx, dy, diagonal = ray[1], ray[2], ray[3]
+        local nx, ny = x + dx, y + dy
+        while inside(nx, ny) do
+            local piece = pieceAt(state, nx, ny)
+            if piece ~= EMPTY then
+                if sign(piece) == attacker then
+                    local kind = math.abs(piece)
+                    if kind == QUEEN or (diagonal and kind == BISHOP) or (not diagonal and kind == ROOK) then
+                        return true
+                    end
+                end
+                break
+            end
+            nx = nx + dx
+            ny = ny + dy
+        end
+    end
+    return false
+end
+
+local function isInCheck(state, white)
+    local king = white and KING or -KING
+    for y = 1, 8 do
+        for x = 1, 8 do
+            if state.board[y][x] == king then
+                return isSquareAttacked(state, x, y, not white)
+            end
+        end
+    end
+    return true
+end
+
+local function addMove(moves, state, fx, fy, tx, ty, promotion, enPassant)
+    local target = pieceAt(state, tx, ty)
+    if target == -sign(state.board[fy][fx]) * KING then
+        return
+    end
+    table.insert(moves, {
+        fx = fx,
+        fy = fy,
+        tx = tx,
+        ty = ty,
+        promotion = promotion,
+        enPassant = enPassant or false
+    })
+end
+
+local function generatePseudoMoves(state, white)
+    local moves = {}
+    local side = white and 1 or -1
+    local direction = white and 1 or -1
+    for y = 1, 8 do
+        for x = 1, 8 do
+            local piece = state.board[y][x]
+            if sign(piece) == side then
+                local kind = math.abs(piece)
+                if kind == PAWN then
+                    local nextY = y + direction
+                    local promotionRank = white and 8 or 1
+                    local startRank = white and 2 or 7
+                    if inside(x, nextY) and pieceAt(state, x, nextY) == EMPTY then
+                        addMove(moves, state, x, y, x, nextY, nextY == promotionRank and QUEEN or nil, false)
+                        local doubleY = y + 2 * direction
+                        if y == startRank and pieceAt(state, x, doubleY) == EMPTY then
+                            addMove(moves, state, x, y, x, doubleY, nil, false)
+                        end
+                    end
+                    for _, dx in ipairs({-1, 1}) do
+                        local targetX = x + dx
+                        local targetY = y + direction
+                        local target = pieceAt(state, targetX, targetY)
+                        if inside(targetX, targetY) and target ~= EMPTY and sign(target) == -side and math.abs(target) ~= KING then
+                            addMove(moves, state, x, y, targetX, targetY, targetY == promotionRank and QUEEN or nil, false)
+                        elseif state.epX == targetX and state.epY == targetY then
+                            addMove(moves, state, x, y, targetX, targetY, nil, true)
+                        end
+                    end
+                elseif kind == KNIGHT then
+                    for _, step in ipairs(KNIGHT_STEPS) do
+                        local tx, ty = x + step[1], y + step[2]
+                        local target = pieceAt(state, tx, ty)
+                        if inside(tx, ty) and (target == EMPTY or (sign(target) == -side and math.abs(target) ~= KING)) then
+                            addMove(moves, state, x, y, tx, ty, nil, false)
+                        end
+                    end
+                elseif kind == KING then
+                    for _, step in ipairs(KING_STEPS) do
+                        local tx, ty = x + step[1], y + step[2]
+                        local target = pieceAt(state, tx, ty)
+                        if inside(tx, ty) and (target == EMPTY or (sign(target) == -side and math.abs(target) ~= KING)) then
+                            addMove(moves, state, x, y, tx, ty, nil, false)
+                        end
+                    end
+                    local homeY = white and 1 or 8
+                    local canCastleKing = white and state.castling.wk or (not white and state.castling.bk)
+                    local canCastleQueen = white and state.castling.wq or (not white and state.castling.bq)
+                    if y == homeY and x == 5 and not isInCheck(state, white) then
+                        if canCastleKing and pieceAt(state, 8, homeY) == side * ROOK and pieceAt(state, 6, homeY) == EMPTY and pieceAt(state, 7, homeY) == EMPTY and not isSquareAttacked(state, 6, homeY, not white) and not isSquareAttacked(state, 7, homeY, not white) then
+                            addMove(moves, state, x, y, 7, homeY, nil, false)
+                        end
+                        if canCastleQueen and pieceAt(state, 1, homeY) == side * ROOK and pieceAt(state, 4, homeY) == EMPTY and pieceAt(state, 3, homeY) == EMPTY and pieceAt(state, 2, homeY) == EMPTY and not isSquareAttacked(state, 4, homeY, not white) and not isSquareAttacked(state, 3, homeY, not white) then
+                            addMove(moves, state, x, y, 3, homeY, nil, false)
+                        end
+                    end
+                else
+                    for _, ray in ipairs(RAYS) do
+                        local dx, dy, diagonal = ray[1], ray[2], ray[3]
+                        if kind == QUEEN or (diagonal and kind == BISHOP) or (not diagonal and kind == ROOK) then
+                            local tx, ty = x + dx, y + dy
+                            while inside(tx, ty) do
+                                local target = pieceAt(state, tx, ty)
+                                if target == EMPTY then
+                                    addMove(moves, state, x, y, tx, ty, nil, false)
+                                else
+                                    if sign(target) == -side and math.abs(target) ~= KING then
+                                        addMove(moves, state, x, y, tx, ty, nil, false)
+                                    end
+                                    break
+                                end
+                                tx = tx + dx
+                                ty = ty + dy
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return moves
+end
+
+local function revokeRookRight(state, white, x, y)
+    if white and y == 1 then
+        if x == 1 then
+            state.castling.wq = false
+        elseif x == 8 then
+            state.castling.wk = false
+        end
+    elseif not white and y == 8 then
+        if x == 1 then
+            state.castling.bq = false
+        elseif x == 8 then
+            state.castling.bk = false
+        end
+    end
+end
+
+local function applyMove(state, move)
+    local nextState = copyState(state)
+    local board = nextState.board
+    local movingPiece = board[move.fy][move.fx]
+    local capturedPiece = board[move.ty][move.tx]
+    local movingWhite = movingPiece > 0
+    if move.enPassant then
+        local capturedY = move.ty - (movingWhite and 1 or -1)
+        capturedPiece = board[capturedY][move.tx]
+        board[capturedY][move.tx] = EMPTY
+    end
+    if math.abs(capturedPiece) == ROOK then
+        revokeRookRight(nextState, capturedPiece > 0, move.tx, move.ty)
+    end
+    board[move.fy][move.fx] = EMPTY
+    board[move.ty][move.tx] = movingPiece
+    if move.promotion then
+        board[move.ty][move.tx] = (movingWhite and 1 or -1) * move.promotion
+    end
+    if math.abs(movingPiece) == KING then
+        if movingWhite then
+            nextState.castling.wk = false
+            nextState.castling.wq = false
+        else
+            nextState.castling.bk = false
+            nextState.castling.bq = false
+        end
+        if math.abs(move.tx - move.fx) == 2 then
+            local rookFrom = move.tx > move.fx and 8 or 1
+            local rookTo = move.tx > move.fx and move.tx - 1 or move.tx + 1
+            board[move.fy][rookTo] = board[move.fy][rookFrom]
+            board[move.fy][rookFrom] = EMPTY
+        end
+    elseif math.abs(movingPiece) == ROOK then
+        revokeRookRight(nextState, movingWhite, move.fx, move.fy)
+    end
+    nextState.epX = nil
+    nextState.epY = nil
+    if math.abs(movingPiece) == PAWN and math.abs(move.ty - move.fy) == 2 then
+        nextState.epX = move.fx
+        nextState.epY = (move.fy + move.ty) / 2
+    end
+    nextState.whiteToMove = not state.whiteToMove
+    return nextState
+end
+
+local function legalMoves(state, white)
+    local result = {}
+    local candidates = generatePseudoMoves(state, white)
+    for _, move in ipairs(candidates) do
+        local nextState = applyMove(state, move)
+        if not isInCheck(nextState, white) then
+            table.insert(result, move)
+        end
+    end
+    return result
+end
+
+local function evaluate(state)
+    local score = 0
+    for y = 1, 8 do
+        for x = 1, 8 do
+            local piece = state.board[y][x]
+            if piece ~= EMPTY then
+                local side = sign(piece)
+                local kind = math.abs(piece)
+                local value = VALUES[kind]
+                local center = 7 - (math.abs(3.5 - x) + math.abs(3.5 - y))
+                if kind == PAWN then
+                    value = value + (side > 0 and (y - 2) or (7 - y)) * 5 + center * 2
+                elseif kind == KNIGHT or kind == BISHOP then
+                    value = value + center * 5
+                elseif kind == QUEEN then
+                    value = value + center * 2
+                end
+                score = score + side * value
+            end
+        end
+    end
+    return score
+end
+
+local searchDeadline = 0
+local searchNodes = 0
+
+local function moveOrderScore(state, move)
+    local mover = math.abs(state.board[move.fy][move.fx])
+    local target = state.board[move.ty][move.tx]
+    if move.enPassant then
+        target = state.whiteToMove and -PAWN or PAWN
+    end
+    local score = 0
+    if target ~= EMPTY then
+        score = score + 10 * VALUES[math.abs(target)] - VALUES[mover]
+    end
+    if move.promotion then
+        score = score + VALUES[move.promotion]
+    end
+    if math.abs(state.board[move.fy][move.fx]) == KING and math.abs(move.tx - move.fx) == 2 then
+        score = score + 40
+    end
+    return score
+end
+
+local function search(state, depth, alpha, beta, ply)
+    searchNodes = searchNodes + 1
+    if searchNodes % 64 == 0 and os.clock() >= searchDeadline then
+        error("SEARCH_TIMEOUT", 0)
+    end
+    local moves = legalMoves(state, state.whiteToMove)
+    if #moves == 0 then
+        if isInCheck(state, state.whiteToMove) then
+            return -MATE + ply, {}
+        end
+        return 0, {}
+    end
+    if depth == 0 then
+        local perspective = state.whiteToMove and 1 or -1
+        return evaluate(state) * perspective, {}
+    end
+    table.sort(moves, function(a, b)
+        return moveOrderScore(state, a) > moveOrderScore(state, b)
+    end)
+    local bestScore = -INF
+    local bestLine = {}
+    for _, move in ipairs(moves) do
+        local child = applyMove(state, move)
+        local childScore, childLine = search(child, depth - 1, -beta, -alpha, ply + 1)
+        local score = -childScore
+        if score > bestScore then
+            bestScore = score
+            bestLine = {move}
+            for _, nextMove in ipairs(childLine) do
+                table.insert(bestLine, nextMove)
+            end
+        end
+        if score > alpha then
+            alpha = score
+        end
+        if alpha >= beta then
+            break
+        end
+    end
+    return bestScore, bestLine
+end
+
+local function bestLineFor(state)
+    local available = legalMoves(state, state.whiteToMove)
+    if #available == 0 then
+        return {}, 0
+    end
+    table.sort(available, function(a, b)
+        return moveOrderScore(state, a) > moveOrderScore(state, b)
+    end)
+    local bestLine = {available[1]}
+    local bestScore = 0
+    for depth = 1, 3 do
+        searchDeadline = os.clock() + 0.9
+        searchNodes = 0
+        local ok, score, line = pcall(function()
+            return search(state, depth, -INF, INF, 0)
+        end)
+        if ok and line and line[1] then
+            bestLine = line
+            bestScore = score
+        elseif not ok then
+            break
+        end
+    end
+    return bestLine, bestScore
+end
+
+local function squareName(x, y)
+    return FILES[x] .. tostring(y)
+end
+
+local function moveName(move)
+    if not move then
+        return ""
+    end
+    return squareName(move.fx, move.fy) .. " → " .. squareName(move.tx, move.ty)
+end
+
+local function lineName(line)
+    local chunks = {}
+    for index, move in ipairs(line) do
+        table.insert(chunks, tostring(index) .. ". " .. moveName(move))
+    end
+    return table.concat(chunks, "   ")
+end
+
+local function makeCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = parent
+end
+
+local function makeLabel(parent, name, text, size, position, textSize)
+    local label = Instance.new("TextLabel")
+    label.Name = name
+    label.BackgroundTransparency = 1
+    label.Size = size
+    label.Position = position
+    label.Font = Enum.Font.Gotham
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(235, 239, 246)
+    label.TextSize = textSize
+    label.TextWrapped = true
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Top
+    label.Parent = parent
+    return label
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "ChessHelperLocal"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 50
+gui.Parent = playerGui
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.AnchorPoint = Vector2.new(0.5, 0.5)
+main.Position = UDim2.fromScale(0.5, 0.5)
+main.Size = UDim2.fromOffset(760, 590)
+main.BackgroundColor3 = Color3.fromRGB(20, 25, 34)
+main.BorderSizePixel = 0
+main.Parent = gui
+makeCorner(main, 18)
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(64, 78, 98)
+mainStroke.Thickness = 1
+mainStroke.Parent = main
+
+local scale = Instance.new("UIScale")
+scale.Parent = main
+
+local function fitToScreen()
+    local camera = workspace.CurrentCamera
+    if not camera then
+        return
+    end
+    local viewport = camera.ViewportSize
+    scale.Scale = math.max(0.35, math.min(1, (viewport.X - 16) / 760, (viewport.Y - 16) / 590))
+end
+
+fitToScreen()
+if workspace.CurrentCamera then
+    workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fitToScreen)
+end
+
+makeLabel(main, "Title", "หมากรุกกับบอท", UDim2.fromOffset(710, 42), UDim2.fromOffset(24, 18), 25)
+local statusLabel = makeLabel(main, "Status", "ตาคุณ (ขาว)", UDim2.fromOffset(710, 28), UDim2.fromOffset(24, 54), 16)
+statusLabel.TextColor3 = Color3.fromRGB(128, 221, 185)
+
+local boardFrame = Instance.new("Frame")
+boardFrame.Name = "Board"
+boardFrame.Position = UDim2.fromOffset(24, 90)
+boardFrame.Size = UDim2.fromOffset(480, 480)
+boardFrame.BackgroundColor3 = Color3.fromRGB(32, 39, 48)
+boardFrame.BorderSizePixel = 0
+boardFrame.ClipsDescendants = true
+boardFrame.Parent = main
+makeCorner(boardFrame, 8)
+local boardStroke = Instance.new("UIStroke")
+boardStroke.Color = Color3.fromRGB(100, 117, 137)
+boardStroke.Thickness = 2
+boardStroke.Parent = boardFrame
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.fromScale(0.125, 0.125)
+grid.CellPadding = UDim2.fromOffset(0, 0)
+grid.FillDirection = Enum.FillDirection.Horizontal
+grid.SortOrder = Enum.SortOrder.LayoutOrder
+grid.Parent = boardFrame
+
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.Position = UDim2.fromOffset(525, 90)
+panel.Size = UDim2.fromOffset(211, 480)
+panel.BackgroundColor3 = Color3.fromRGB(29, 36, 47)
+panel.BorderSizePixel = 0
+panel.Parent = main
+makeCorner(panel, 12)
+
+makeLabel(panel, "HowTo", "วิธีเล่น\nแตะหมากสีขาว แล้วแตะช่องที่ไฮไลต์\nบอทจะเดินหมากสีดำให้อัตโนมัติ", UDim2.new(1, -24, 0, 94), UDim2.fromOffset(12, 14), 14)
+local hintLabel = makeLabel(panel, "Hint", "คำแนะนำ\nกดปุ่มเพื่อคำนวณหมากที่แนะนำ", UDim2.new(1, -24, 0, 170), UDim2.fromOffset(12, 126), 14)
+hintLabel.TextColor3 = Color3.fromRGB(191, 224, 255)
+
+local function makeButton(parent, name, text, position, size, color)
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Text = text
+    button.Position = position
+    button.Size = size
+    button.BackgroundColor3 = color
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.GothamBold
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 15
+    button.TextWrapped = true
+    button.AutoButtonColor = true
+    button.Parent = parent
+    makeCorner(button, 9)
+    return button
+end
+
+local hintButton = makeButton(panel, "HintButton", "แนะนำหมาก", UDim2.fromOffset(12, 314), UDim2.new(1, -24, 0, 52), Color3.fromRGB(23, 133, 119))
+local resetButton = makeButton(panel, "ResetButton", "เริ่มเกมใหม่", UDim2.fromOffset(12, 378), UDim2.new(1, -24, 0, 48), Color3.fromRGB(70, 83, 104))
+makeLabel(panel, "Footer", "เลื่อนดูเส้นทางต่อได้ในช่องคำแนะนำ\nเลื่อนเบี้ยถึงสุดกระดานแล้วเลื่อนเป็นควีนอัตโนมัติ", UDim2.new(1, -24, 0, 56), UDim2.fromOffset(12, 436), 11)
+
+local state = newGame()
+local legal = legalMoves(state, true)
+local selected = nil
+local hintMove = nil
+local hintLine = nil
+local lastMove = nil
+local gameOver = false
+local aiThinking = false
+local squareButtons = {}
+
+local function updateStatus()
+    if gameOver then
+        return
+    end
+    if aiThinking then
+        statusLabel.Text = "บอทกำลังคิด..."
+        statusLabel.TextColor3 = Color3.fromRGB(255, 207, 112)
+    elseif state.whiteToMove then
+        statusLabel.Text = "ตาคุณ (ขาว)"
+        statusLabel.TextColor3 = Color3.fromRGB(128, 221, 185)
+    else
+        statusLabel.Text = "ตาบอท (ดำ)"
+        statusLabel.TextColor3 = Color3.fromRGB(191, 206, 255)
+    end
+end
+
+local function checkGameEnd()
+    legal = legalMoves(state, state.whiteToMove)
+    if #legal == 0 then
+        gameOver = true
+        if isInCheck(state, state.whiteToMove) then
+            if state.whiteToMove then
+                statusLabel.Text = "รุกฆาต — บอทชนะ"
+            else
+                statusLabel.Text = "รุกฆาต — คุณชนะ"
+            end
+        else
+            statusLabel.Text = "เสมอ — อับจนเดิน"
+        end
+        statusLabel.TextColor3 = Color3.fromRGB(255, 191, 120)
+    else
+        updateStatus()
+    end
+end
+
+local function refreshBoard()
+    for y = 1, 8 do
+        for x = 1, 8 do
+            local button = squareButtons[y][x]
+            local piece = state.board[y][x]
+            button.Text = piece == EMPTY and "" or SYMBOLS[piece]
+            if piece > 0 then
+                button.TextColor3 = Color3.fromRGB(249, 249, 244)
+                button.TextStrokeColor3 = Color3.fromRGB(42, 49, 57)
+            elseif piece < 0 then
+                button.TextColor3 = Color3.fromRGB(29, 32, 40)
+                button.TextStrokeColor3 = Color3.fromRGB(238, 238, 230)
+            end
+            local base = ((x + y) % 2 == 0) and Color3.fromRGB(99, 126, 111) or Color3.fromRGB(225, 224, 208)
+            if lastMove and ((x == lastMove.fx and y == lastMove.fy) or (x == lastMove.tx and y == lastMove.ty)) then
+                base = Color3.fromRGB(172, 186, 111)
+            end
+            if selected and x == selected.x and y == selected.y then
+                base = Color3.fromRGB(232, 174, 73)
+            end
+            if selected then
+                for _, move in ipairs(legal) do
+                    if move.fx == selected.x and move.fy == selected.y and move.tx == x and move.ty == y then
+                        base = Color3.fromRGB(98, 190, 120)
+                    end
+                end
+            end
+            if hintMove and x == hintMove.fx and y == hintMove.fy then
+                base = Color3.fromRGB(15, 185, 174)
+            elseif hintMove and x == hintMove.tx and y == hintMove.ty then
+                base = Color3.fromRGB(29, 170, 88)
+            end
+            button.BackgroundColor3 = base
+        end
+    end
+    updateStatus()
+    hintButton.Active = state.whiteToMove and not aiThinking and not gameOver
+    hintButton.AutoButtonColor = hintButton.Active
+end
+
+local function positionText(line)
+    if not line or #line == 0 then
+        return "ไม่มีหมากที่เดินได้"
+    end
+    local rows = {}
+    for i = 1, #line do
+        table.insert(rows, tostring(i) .. ". " .. moveName(line[i]))
+    end
+    return table.concat(rows, "\n")
+end
+
+local function playMove(move)
+    state = applyMove(state, move)
+    lastMove = move
+    selected = nil
+    hintMove = nil
+    hintLine = nil
+    checkGameEnd()
+    refreshBoard()
+end
+
+local function runBot()
+    if gameOver or state.whiteToMove then
+        return
+    end
+    aiThinking = true
+    refreshBoard()
+    task.spawn(function()
+        task.wait(0.12)
+        if gameOver or state.whiteToMove then
+            aiThinking = false
+            refreshBoard()
+            return
+        end
+        local line = bestLineFor(state)
+        aiThinking = false
+        if line and line[1] then
+            playMove(line[1])
+        else
+            checkGameEnd()
+            refreshBoard()
+        end
+    end)
+end
+
+local function squareClicked(x, y)
+    if gameOver or aiThinking or not state.whiteToMove then
+        return
+    end
+    hintMove = nil
+    hintLine = nil
+    hintLabel.Text = "คำแนะนำ\nกดปุ่มเพื่อคำนวณหมากที่แนะนำ"
+    if selected then
+        for _, move in ipairs(legal) do
+            if move.fx == selected.x and move.fy == selected.y and move.tx == x and move.ty == y then
+                playMove(move)
+                if not gameOver then
+                    runBot()
+                end
+                return
+            end
+        end
+    end
+    local piece = state.board[y][x]
+    if piece > 0 then
+        selected = {x = x, y = y}
+    else
+        selected = nil
+    end
+    refreshBoard()
+end
+
+for y = 8, 1, -1 do
+    for x = 1, 8 do
+        local file = x
+        local rank = y
+        local button = Instance.new("TextButton")
+        button.Name = "Square_" .. tostring(x) .. "_" .. tostring(y)
+        button.LayoutOrder = (8 - y) * 8 + x
+        button.BackgroundColor3 = ((x + y) % 2 == 0) and Color3.fromRGB(99, 126, 111) or Color3.fromRGB(225, 224, 208)
+        button.BorderSizePixel = 0
+        button.Text = ""
+        button.TextScaled = true
+        button.Font = Enum.Font.GothamBlack
+        button.TextStrokeTransparency = 0.38
+        button.AutoButtonColor = false
+        button.Parent = boardFrame
+        squareButtons[y] = squareButtons[y] or {}
+        squareButtons[y][x] = button
+        button.Activated:Connect(function()
+            squareClicked(file, rank)
+        end)
+    end
+end
+
+hintButton.Activated:Connect(function()
+    if gameOver or aiThinking or not state.whiteToMove then
+        return
+    end
+    aiThinking = true
+    hintLabel.Text = "กำลังคำนวณ..."
+    refreshBoard()
+    task.spawn(function()
+        local line = bestLineFor(state)
+        aiThinking = false
+        if line and line[1] then
+            hintLine = line
+            hintMove = line[1]
+            hintLabel.Text = "หมากแนะนำ\n" .. moveName(line[1]) .. "\n\nเส้นทางต่อ:\n" .. positionText(line)
+        else
+            hintLabel.Text = "ไม่มีหมากที่เดินได้"
+        end
+        refreshBoard()
+    end)
+end)
+
+resetButton.Activated:Connect(function()
+    state = newGame()
+    legal = legalMoves(state, true)
+    selected = nil
+    hintMove = nil
+    hintLine = nil
+    lastMove = nil
+    gameOver = false
+    aiThinking = false
+    hintLabel.Text = "คำแนะนำ\nกดปุ่มเพื่อคำนวณหมากที่แนะนำ"
+    checkGameEnd()
+    refreshBoard()
+end)
+
+checkGameEnd()
+refreshBoard()
