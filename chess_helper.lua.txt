@@ -330,6 +330,17 @@ end
 
 local function evaluate(state)
     local score = 0
+    local pawnFiles = {[1] = {}, [-1] = {}}
+    local pawns = {[1] = {}, [-1] = {}}
+    local rooks = {[1] = {}, [-1] = {}}
+    local bishops = {[1] = 0, [-1] = 0}
+    local kings = {}
+    local phase = 0
+    for side = -1, 1, 2 do
+        for x = 1, 8 do
+            pawnFiles[side][x] = 0
+        end
+    end
     for y = 1, 8 do
         for x = 1, 8 do
             local piece = state.board[y][x]
@@ -337,15 +348,89 @@ local function evaluate(state)
                 local side = sign(piece)
                 local kind = math.abs(piece)
                 local value = VALUES[kind]
-                local center = 7 - (math.abs(3.5 - x) + math.abs(3.5 - y))
+                local center = 7 - math.abs(4.5 - x) - math.abs(4.5 - y)
+                local rank = side == 1 and y or (9 - y)
+                local positional = 0
                 if kind == PAWN then
-                    value = value + (side > 0 and (y - 2) or (7 - y)) * 5 + center * 2
-                elseif kind == KNIGHT or kind == BISHOP then
-                    value = value + center * 5
+                    positional = math.max(0, rank - 2) * 7 + center * 2
+                    pawnFiles[side][x] = pawnFiles[side][x] + 1
+                    table.insert(pawns[side], {x = x, y = y, rank = rank})
+                elseif kind == KNIGHT then
+                    positional = center * 7
+                    phase = phase + 1
+                elseif kind == BISHOP then
+                    positional = center * 5
+                    bishops[side] = bishops[side] + 1
+                    phase = phase + 1
+                elseif kind == ROOK then
+                    phase = phase + 2
+                    if rank == 7 then
+                        positional = positional + 18
+                    end
+                    table.insert(rooks[side], {x = x, rank = rank})
                 elseif kind == QUEEN then
-                    value = value + center * 2
+                    positional = center * 2
+                    phase = phase + 4
+                elseif kind == KING then
+                    kings[side] = {x = x, y = y, rank = rank}
                 end
-                score = score + side * value
+                score = score + side * (value + positional)
+            end
+        end
+    end
+
+    phase = math.min(24, phase)
+    for _, side in ipairs({1, -1}) do
+        local enemy = -side
+        if bishops[side] >= 2 then
+            score = score + side * 30
+        end
+        for _, rook in ipairs(rooks[side]) do
+            if pawnFiles[side][rook.x] == 0 then
+                score = score + side * (pawnFiles[enemy][rook.x] == 0 and 25 or 12)
+            end
+        end
+        for _, pawn in ipairs(pawns[side]) do
+            local isolated = (pawn.x == 1 or pawnFiles[side][pawn.x - 1] == 0)
+                and (pawn.x == 8 or pawnFiles[side][pawn.x + 1] == 0)
+            if isolated then
+                score = score - side * 13
+            end
+            if pawnFiles[side][pawn.x] > 1 then
+                score = score - side * 12
+            end
+            local passed = true
+            for _, enemyPawn in ipairs(pawns[enemy]) do
+                local ahead = side == 1 and enemyPawn.y > pawn.y or side == -1 and enemyPawn.y < pawn.y
+                if math.abs(enemyPawn.x - pawn.x) <= 1 and ahead then
+                    passed = false
+                    break
+                end
+            end
+            if passed then
+                local passedBonus = {0, 0, 5, 10, 18, 32, 55, 90}
+                score = score + side * passedBonus[math.min(8, pawn.rank - 1)]
+            end
+        end
+
+        local king = kings[side]
+        if king then
+            local kingCenter = 7 - math.abs(4.5 - king.x) - math.abs(4.5 - king.y)
+            if phase <= 8 then
+                score = score + side * kingCenter * 8
+            else
+                local forward = side == 1 and 1 or -1
+                local shield = 0
+                for dx = -1, 1 do
+                    local x, y = king.x + dx, king.y + forward
+                    if inside(x, y) and state.board[y][x] == side * PAWN then
+                        shield = shield + 1
+                    end
+                end
+                score = score + side * (shield * 12)
+                if king.x == 7 or king.x == 3 then
+                    score = score + side * 16
+                end
             end
         end
     end
@@ -354,6 +439,54 @@ end
 
 local searchDeadline = 0
 local searchNodes = 0
+local transpositionTable = {}
+local transpositionEntries = 0
+local transpositionHits = 0
+local killerMoves = {}
+local historyMoves = {[1] = {}, [-1] = {}}
+
+local function positionKey(state)
+    local parts = {}
+    for y = 1, 8 do
+        for x = 1, 8 do
+            table.insert(parts, string.char(state.board[y][x] + 7))
+        end
+    end
+    local rights = state.castling or {}
+    local flags = (rights.wk and 1 or 0) + (rights.wq and 2 or 0) + (rights.bk and 4 or 0) + (rights.bq and 8 or 0)
+    table.insert(parts, string.char(state.whiteToMove and 1 or 2))
+    table.insert(parts, string.char(flags))
+    table.insert(parts, string.char(state.epX or 0))
+    table.insert(parts, string.char(state.epY or 0))
+    return table.concat(parts)
+end
+
+local function sameMove(a, b)
+    return a and b and a.fx == b.fx and a.fy == b.fy and a.tx == b.tx and a.ty == b.ty and a.promotion == b.promotion
+end
+
+local function moveKey(move)
+    local key = (((move.fy - 1) * 8 + move.fx - 1) * 64) + ((move.ty - 1) * 8 + move.tx - 1)
+    return key + (move.promotion and move.promotion * 4096 or 0)
+end
+
+local function scoreToTable(score, ply)
+    if score > MATE - 1000 then
+        return score + ply
+    elseif score < -MATE + 1000 then
+        return score - ply
+    end
+    return score
+end
+
+local function scoreFromTable(score, ply)
+    if score > MATE - 1000 then
+        return score - ply
+    elseif score < -MATE + 1000 then
+        return score + ply
+    end
+    return score
+end
 
 local function checkSearchTime()
     searchNodes = searchNodes + 1
@@ -365,21 +498,34 @@ local function checkSearchTime()
     end
 end
 
-local function moveOrderScore(state, move)
+local function moveOrderScore(state, move, ply, preferredMove)
     local mover = math.abs(state.board[move.fy][move.fx])
     local target = state.board[move.ty][move.tx]
     if move.enPassant then
         target = state.whiteToMove and -PAWN or PAWN
     end
     local score = 0
+    local quiet = target == EMPTY and not move.enPassant and not move.promotion
     if target ~= EMPTY then
-        score = score + 10 * VALUES[math.abs(target)] - VALUES[mover]
+        score = score + 100000 + 10 * VALUES[math.abs(target)] - VALUES[mover]
     end
     if move.promotion then
-        score = score + VALUES[move.promotion]
+        score = score + 80000 + VALUES[move.promotion]
     end
     if math.abs(state.board[move.fy][move.fx]) == KING and math.abs(move.tx - move.fx) == 2 then
-        score = score + 40
+        score = score + 500
+    end
+    if preferredMove and sameMove(move, preferredMove) then
+        score = score + 2000000
+    elseif quiet then
+        local killers = killerMoves[ply or 0]
+        if killers and sameMove(move, killers[1]) then
+            score = score + 70000
+        elseif killers and sameMove(move, killers[2]) then
+            score = score + 60000
+        end
+        local side = state.whiteToMove and 1 or -1
+        score = score + (historyMoves[side][moveKey(move)] or 0)
     end
     return score
 end
@@ -402,8 +548,8 @@ quiescence = function(state, alpha, beta, ply, qDepth)
         if qDepth <= 0 then
             return standPat
         end
-    elseif qDepth <= -2 then
-        return standPat
+    elseif qDepth <= -4 then
+        return standPat - 250
     end
 
     local moves = legalMoves(state, white)
@@ -449,6 +595,29 @@ end
 
 local function search(state, depth, alpha, beta, ply)
     checkSearchTime()
+    if depth <= 0 then
+        return quiescence(state, alpha, beta, ply, 5), {}
+    end
+
+    local originalAlpha = alpha
+    local originalBeta = beta
+    local key = positionKey(state)
+    local entry = transpositionTable[key]
+    local preferredMove = entry and entry.move or nil
+    if entry and entry.depth >= depth then
+        local cachedScore = scoreFromTable(entry.score, ply)
+        if entry.flag == "exact" then
+            transpositionHits = transpositionHits + 1
+            return cachedScore, entry.move and {entry.move} or {}
+        elseif entry.flag == "lower" and cachedScore >= beta then
+            transpositionHits = transpositionHits + 1
+            return cachedScore, entry.move and {entry.move} or {}
+        elseif entry.flag == "upper" and cachedScore <= alpha then
+            transpositionHits = transpositionHits + 1
+            return cachedScore, entry.move and {entry.move} or {}
+        end
+    end
+
     local moves = legalMoves(state, state.whiteToMove)
     if #moves == 0 then
         if isInCheck(state, state.whiteToMove) then
@@ -456,13 +625,12 @@ local function search(state, depth, alpha, beta, ply)
         end
         return 0, {}
     end
-    if depth == 0 then
-        return quiescence(state, alpha, beta, ply, 5), {}
-    end
     table.sort(moves, function(a, b)
-        return moveOrderScore(state, a) > moveOrderScore(state, b)
+        return moveOrderScore(state, a, ply, preferredMove) > moveOrderScore(state, b, ply, preferredMove)
     end)
+
     local bestScore = -INF
+    local bestMove = nil
     local bestLine = {}
     for _, move in ipairs(moves) do
         local child = applyMove(state, move)
@@ -470,6 +638,7 @@ local function search(state, depth, alpha, beta, ply)
         local score = -childScore
         if score > bestScore then
             bestScore = score
+            bestMove = move
             bestLine = {move}
             for _, nextMove in ipairs(childLine) do
                 table.insert(bestLine, nextMove)
@@ -479,36 +648,116 @@ local function search(state, depth, alpha, beta, ply)
             alpha = score
         end
         if alpha >= beta then
+            local target = state.board[move.ty][move.tx]
+            local quiet = target == EMPTY and not move.enPassant and not move.promotion
+            if quiet then
+                local killers = killerMoves[ply] or {}
+                if not sameMove(move, killers[1]) then
+                    killerMoves[ply] = {move, killers[1]}
+                end
+                local side = state.whiteToMove and 1 or -1
+                local keyForHistory = moveKey(move)
+                historyMoves[side][keyForHistory] = math.min(16000, (historyMoves[side][keyForHistory] or 0) + depth * depth * 12)
+            end
             break
+        end
+    end
+
+    if bestMove then
+        local flag = "exact"
+        if bestScore <= originalAlpha then
+            flag = "upper"
+        elseif bestScore >= originalBeta then
+            flag = "lower"
+        end
+        local oldEntry = transpositionTable[key]
+        if not oldEntry or depth >= oldEntry.depth or transpositionEntries < 50000 then
+            if not oldEntry then
+                transpositionEntries = transpositionEntries + 1
+            end
+            transpositionTable[key] = {
+                depth = depth,
+                score = scoreToTable(bestScore, ply),
+                flag = flag,
+                move = bestMove
+            }
         end
     end
     return bestScore, bestLine
 end
 
+local function transpositionPV(state, maxDepth)
+    local current = copyState(state)
+    local line = {}
+    local seen = {}
+    for _ = 1, maxDepth do
+        local key = positionKey(current)
+        if seen[key] then
+            break
+        end
+        seen[key] = true
+        local entry = transpositionTable[key]
+        if not entry or not entry.move then
+            break
+        end
+        local selected = nil
+        for _, move in ipairs(legalMoves(current, current.whiteToMove)) do
+            if sameMove(move, entry.move) then
+                selected = move
+                break
+            end
+        end
+        if not selected then
+            break
+        end
+        table.insert(line, selected)
+        current = applyMove(current, selected)
+    end
+    return line
+end
+
 local function bestLineFor(state)
     local available = legalMoves(state, state.whiteToMove)
     if #available == 0 then
-        return {}, 0
+        return {}, 0, 0, 0, 0
     end
+    transpositionTable = {}
+    transpositionEntries = 0
+    transpositionHits = 0
+    killerMoves = {}
+    historyMoves = {[1] = {}, [-1] = {}}
     table.sort(available, function(a, b)
         return moveOrderScore(state, a) > moveOrderScore(state, b)
     end)
     local bestLine = {available[1]}
     local bestScore = 0
-    searchDeadline = os.clock() + 1.35
+    local bestDepth = 0
+    searchDeadline = os.clock() + 2.4
     searchNodes = 0
-    for depth = 1, 5 do
+    for depth = 1, 8 do
+        local alpha, beta = -INF, INF
+        if depth >= 3 and bestDepth > 0 then
+            alpha = bestScore - 60
+            beta = bestScore + 60
+        end
         local ok, score, line = pcall(function()
-            return search(state, depth, -INF, INF, 0)
+            return search(state, depth, alpha, beta, 0)
         end)
+        if ok and alpha > -INF and (score <= alpha or score >= beta) then
+            ok, score, line = pcall(function()
+                return search(state, depth, -INF, INF, 0)
+            end)
+        end
         if ok and line and line[1] then
-            bestLine = line
             bestScore = score
+            local principal = transpositionPV(state, depth)
+            bestLine = #principal > 0 and principal or line
+            bestDepth = depth
         elseif not ok then
             break
         end
     end
-    return bestLine, bestScore
+    return bestLine, bestScore, bestDepth, searchNodes, transpositionHits
 end
 
 local function squareName(x, y)
@@ -905,6 +1154,9 @@ local currentTileMap = {}
 local suppressNextToggle = false
 local currentPieceCount = 0
 local calculating = false
+local analysisDepth = 0
+local analysisNodes = 0
+local analysisHits = 0
 local gameMessage = "กำลังค้นหากระดาน..."
 local displayedLine = nil
 local highlights = {}
@@ -1090,7 +1342,8 @@ local function refreshPanel()
     if calculating then
         statusLabel.Text = "กำลังคำนวณ..."
     else
-        statusLabel.Text = tostring(currentPieceCount) .. " ตัว • ตาเดิน " .. (currentTurn == 1 and "ขาว" or "ดำ")
+        local searchInfo = analysisDepth > 0 and (" • d" .. tostring(analysisDepth) .. " • tt" .. tostring(analysisHits)) or ""
+        statusLabel.Text = tostring(currentPieceCount) .. " ตัว • ตา " .. (currentTurn == 1 and "ขาว" or "ดำ") .. searchInfo
     end
 end
 
@@ -1129,16 +1382,20 @@ requestHint = function()
         return
     end
     calculating = true
+    analysisDepth = 0
     gameMessage = "กำลังคำนวณตำแหน่งจริง..."
     refreshPanel()
     moveLabel.Text = "กำลังค้นหาหมากที่ดีที่สุด..."
     task.spawn(function()
         local searchedSignature = acceptedSignature
-        local line, score = bestLineFor(state)
+        local line, score, depth, nodes, hits = bestLineFor(state)
         calculating = false
         if searchedSignature ~= acceptedSignature then
             return
         end
+        analysisDepth = depth or 0
+        analysisNodes = nodes or 0
+        analysisHits = hits or 0
         displayedLine = line
         if line and line[1] then
             moveLabel.Text = "เดิน " .. moveName(line[1]) .. "\n" .. scoreName(score) .. "\nต่อไป:\n" .. lineName(line)
@@ -1185,6 +1442,9 @@ local function installSnapshot(board, signature, tileMap, mappedCount)
     currentPieceCount = mappedCount or 0
     currentPosition = buildLiveState()
     displayedLine = nil
+    analysisDepth = 0
+    analysisNodes = 0
+    analysisHits = 0
     clearHighlights()
     moveLabel.Text = "กระดานอัปเดตแล้ว\n" .. (currentTurn == playerSide and "กำลังวิเคราะห์..." or "รอถึงตาของคุณ")
     gameMessage = "อ่านกระดานจริงสำเร็จ"
