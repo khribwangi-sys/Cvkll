@@ -1,0 +1,1300 @@
+--[[
+    Remote & Map Dumper v3  (ต่อยอดจาก "Remote Scanner" by Manus AI)
+
+    ดึงข้อมูลแบบละเอียด (อ่านอย่างเดียว ไม่ยิง remote ไม่แก้อะไรในเกม):
+      1. ข้อมูลเกม/เซิร์ฟเวอร์        6. ValueObjects (ค่าต่างๆ ที่เก็บในเกม)
+      2. ข้อมูลผู้เล่นเรา/ตัวละคร     7. Attributes
+      3. ผู้เล่นทั้งเซิร์ฟ/ทีม        8. ProximityPrompt / ClickDetector / TouchInterest
+      4. ค่า Workspace/Lighting      9. Tools / ปุ่ม GUI / Seat / Spawn / Animation
+      5. Remotes (+ listeners)      10. Scripts + โครงสร้าง (tree)
+
+    ผลลัพธ์: เซฟเป็นไฟล์ .txt ที่ CONFIG.SAVE_DIR (ค่าเริ่มต้น /storage/emulated/0/)
+]]
+
+------------------------------------------------------------------
+-- CONFIG
+------------------------------------------------------------------
+local CONFIG = {
+    SAVE_DIR          = "/storage/emulated/0/", -- โฟลเดอร์ที่จะเซฟ
+    FILE_NAME         = nil,                    -- nil = ตั้งชื่อให้อัตโนมัติ
+    DUMP_TREE         = true,                   -- ดั้มโครงสร้าง instance
+    TREE_DEPTH        = 4,                      -- ความลึกของ tree
+    TREE_MAX_CHILDREN = 60,                     -- จำนวนลูกสูงสุดต่อ 1 node
+    MAX_LIST          = 3000,                   -- จำกัดจำนวนต่อหมวด (0 = ไม่จำกัด) *Remotes ไม่โดนจำกัด
+    MAX_VALUE_LEN     = 200,                    -- ตัดสตริงที่ยาวเกินนี้
+    YIELD_EVERY       = 800,                    -- พักเฟรมทุกๆ กี่ชิ้น (กันค้าง)
+    SCAN_ATTRIBUTES   = true,
+    SCAN_LISTENERS    = true,                   -- ดู function ที่ผูกกับ OnClientEvent (ต้องมี getconnections)
+    SKIP_SERVICES     = { CoreGui = true, CorePackages = true, Stats = true },
+    GROUP_LIMIT       = 40,                     -- โฟลเดอร์ที่มี Value/Attribute เกินนี้ จะสรุปเป็นกลุ่ม
+    GROUP_SAMPLE      = 8,                      -- ตัวอย่างที่โชว์ต่อกลุ่มที่ถูกสรุป
+    LABEL_LIMIT       = 120,                    -- จำนวนข้อความ UI สูงสุดต่อ ScreenGui
+    SUMMARY_FILE      = true,                   -- สร้างไฟล์ Summary_*.txt สั้นๆ แยกอีกไฟล์
+    FETCH_WEB_INFO    = true,                   -- ดึงข้อมูลเกมจาก games.roblox.com (ต้องมี request)
+    SHOW_GUI_MESSAGE  = true,
+}
+
+------------------------------------------------------------------
+-- SERVICES
+------------------------------------------------------------------
+local Players            = game:GetService("Players")
+local HttpService        = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local UserInputService   = game:GetService("UserInputService")
+local Lighting           = game:GetService("Lighting")
+local Debris             = game:GetService("Debris")
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+    task.wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+local startClock = os.clock()
+
+------------------------------------------------------------------
+-- HELPERS: path / format
+------------------------------------------------------------------
+local KEYWORDS = {
+    ["and"]=true, ["break"]=true, ["do"]=true, ["else"]=true, ["elseif"]=true,
+    ["end"]=true, ["false"]=true, ["for"]=true, ["function"]=true, ["if"]=true,
+    ["in"]=true, ["local"]=true, ["nil"]=true, ["not"]=true, ["or"]=true,
+    ["repeat"]=true, ["return"]=true, ["then"]=true, ["true"]=true,
+    ["until"]=true, ["while"]=true,
+}
+
+local function isService(obj)
+    local ok, svc = pcall(game.GetService, game, obj.ClassName)
+    return ok and svc == obj
+end
+
+-- path แบบเดียวกับที่ใช้เขียนสคริปต์ได้จริง (แก้บัค escape เดิมแล้ว)
+local function getPath(inst)
+    if inst == nil then return "nil" end
+    if inst == game then return "game" end
+
+    local chain, cur, guard = {}, inst, 0
+    while cur and cur ~= game and guard < 200 do
+        guard = guard + 1
+        table.insert(chain, 1, cur)
+        cur = cur.Parent
+    end
+
+    local out
+    if cur == game then out = "game" else out = "<detached>" end
+
+    for i, obj in ipairs(chain) do
+        local name = obj.Name
+        local piece
+        if i == 1 and cur == game and obj == workspace then
+            out = "workspace"
+        elseif i == 1 and cur == game and isService(obj) then
+            piece = ':GetService("' .. obj.ClassName .. '")'
+        elseif obj == LocalPlayer then
+            piece = ".LocalPlayer"
+        elseif name:match("^[%a_][%w_]*$") and not KEYWORDS[name] then
+            piece = "." .. name
+        else
+            piece = "[" .. string.format("%q", name) .. "]"
+        end
+        if piece then out = out .. piece end
+    end
+    return out
+end
+
+local function rootOf(inst)
+    local cur, guard = inst, 0
+    while cur and cur.Parent and cur.Parent ~= game and guard < 200 do
+        guard = guard + 1
+        cur = cur.Parent
+    end
+    return (cur and cur.Name) or "?"
+end
+
+local function r3(n) return string.format("%.3f", n) end
+
+local function fmt(v)
+    local t = typeof(v)
+    if t == "nil" then
+        return "nil"
+    elseif t == "string" then
+        local s, extra = v, ""
+        if #s > CONFIG.MAX_VALUE_LEN then
+            extra = " ...(+" .. (#s - CONFIG.MAX_VALUE_LEN) .. " chars)"
+            s = s:sub(1, CONFIG.MAX_VALUE_LEN)
+        end
+        s = s:gsub("%c", " ")
+        return '"' .. s .. '"' .. extra
+    elseif t == "Instance" then
+        return getPath(v)
+    elseif t == "Vector3" then
+        return "Vector3.new(" .. r3(v.X) .. ", " .. r3(v.Y) .. ", " .. r3(v.Z) .. ")"
+    elseif t == "Vector2" then
+        return "Vector2.new(" .. r3(v.X) .. ", " .. r3(v.Y) .. ")"
+    elseif t == "CFrame" then
+        local c = { v:GetComponents() }
+        for i = 1, #c do c[i] = r3(c[i]) end
+        return "CFrame.new(" .. table.concat(c, ", ") .. ")"
+    elseif t == "Color3" then
+        return "Color3.fromRGB(" .. math.floor(v.R * 255 + 0.5) .. ", "
+            .. math.floor(v.G * 255 + 0.5) .. ", " .. math.floor(v.B * 255 + 0.5) .. ")"
+    elseif t == "table" then
+        local ok, enc = pcall(HttpService.JSONEncode, HttpService, v)
+        local s = ok and enc or tostring(v)
+        if #s > CONFIG.MAX_VALUE_LEN then s = s:sub(1, CONFIG.MAX_VALUE_LEN) .. "..." end
+        return s
+    else
+        return tostring(v)
+    end
+end
+
+local function get(inst, prop)
+    local ok, v = pcall(function() return inst[prop] end)
+    if ok then return v end
+    return nil
+end
+
+------------------------------------------------------------------
+-- OUTPUT (เขียนไฟล์เป็นก้อนๆ กันกินแรม)
+------------------------------------------------------------------
+local Out = { buf = {}, path = nil, lines = 0, bytes = 0, canAppend = (appendfile ~= nil), tee = false, sbuf = {} }
+
+local function flush(force)
+    if not Out.path or not Out.canAppend then return end
+    if #Out.buf == 0 then return end
+    if force or #Out.buf >= 1500 then
+        local chunk = table.concat(Out.buf, "\n") .. "\n"
+        local ok = pcall(appendfile, Out.path, chunk)
+        if ok then
+            Out.buf = {}
+        else
+            Out.canAppend = false -- เก็บไว้ในแรม แล้วเขียนรวดเดียวตอนจบ
+        end
+    end
+end
+
+local function w(s)
+    s = tostring(s)
+    Out.buf[#Out.buf + 1] = s
+    if Out.tee then Out.sbuf[#Out.sbuf + 1] = s end
+    Out.lines = Out.lines + 1
+    Out.bytes = Out.bytes + #s + 1
+    if Out.path and Out.canAppend and #Out.buf >= 1500 then flush(false) end
+end
+
+local ops = 0
+local function yieldMaybe()
+    ops = ops + 1
+    if ops % CONFIG.YIELD_EVERY == 0 then task.wait() end
+end
+
+local function section(title)
+    w("")
+    w(string.rep("=", 72))
+    w(" " .. title)
+    w(string.rep("=", 72))
+end
+
+local function kv(key, value, indent)
+    indent = indent or ""
+    local s
+    if type(value) == "string" then
+        s = value:gsub("[\r\n]+", " ")
+    else
+        s = fmt(value)
+    end
+    w(string.format("%s%-24s: %s", indent, key, s))
+end
+
+local function props(inst, list, indent)
+    for _, p in ipairs(list) do
+        local v = get(inst, p)
+        if v ~= nil then kv(p, v, indent) end
+    end
+end
+
+local function attrs(inst, indent)
+    local ok, a = pcall(inst.GetAttributes, inst)
+    if ok and type(a) == "table" then
+        local keys = {}
+        for k in pairs(a) do keys[#keys + 1] = k end
+        table.sort(keys)
+        for _, k in ipairs(keys) do kv("@" .. k .. " <" .. typeof(a[k]) .. ">", a[k], indent) end
+    end
+end
+
+local function wrapJoin(items, indent, width)
+    local line = indent
+    for i, it in ipairs(items) do
+        local piece = it .. (i < #items and ", " or "")
+        if #line + #piece > width and #line > #indent then
+            w((line:gsub("%s+$", "")))
+            line = indent
+        end
+        line = line .. piece
+    end
+    if #line > #indent then w(line) end
+end
+
+local function joinPath(dir, name)
+    if dir:sub(-1) ~= "/" then dir = dir .. "/" end
+    return dir .. name
+end
+
+-- ลองเซฟที่ SAVE_DIR ก่อน ถ้าไม่ได้ค่อยเซฟใน workspace ของ executor
+local function chooseOutputPath(fileName)
+    if not writefile then return nil end
+    local candidates = {}
+    if CONFIG.SAVE_DIR and CONFIG.SAVE_DIR ~= "" then
+        candidates[#candidates + 1] = joinPath(CONFIG.SAVE_DIR, fileName)
+    end
+    candidates[#candidates + 1] = fileName
+
+    for _, p in ipairs(candidates) do
+        local ok = pcall(writefile, p, "-- Remote & Map Dump\n")
+        if ok then
+            local exists = true
+            if isfile then
+                local ok2, r = pcall(isfile, p)
+                exists = ok2 and r
+            end
+            if exists then return p end
+        end
+    end
+    return nil
+end
+
+------------------------------------------------------------------
+-- HELPERS: position / listeners
+------------------------------------------------------------------
+local function getRootPos()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root and root:IsA("BasePart") then return root.Position end
+    return nil
+end
+
+local myPos = getRootPos()
+
+local function posOf(inst)
+    local cur, n = inst, 0
+    while cur and n < 30 do
+        n = n + 1
+        if cur:IsA("BasePart") then return cur.Position end
+        if cur:IsA("Attachment") then return cur.WorldPosition end
+        if cur:IsA("Model") then
+            local ok, cf = pcall(cur.GetPivot, cur)
+            if ok then return cf.Position end
+        end
+        cur = cur.Parent
+    end
+    return nil
+end
+
+local function whereIs(inst)
+    local ok, p = pcall(posOf, inst)
+    if ok and p then
+        local s = fmt(p)
+        if myPos then s = s .. "   (ห่างเรา " .. string.format("%.1f", (p - myPos).Magnitude) .. " studs)" end
+        return s
+    end
+    return nil
+end
+
+local function describeListeners(remote)
+    if not (CONFIG.SCAN_LISTENERS and getconnections) then return nil end
+    local cn = remote.ClassName
+    local sig
+    if cn == "RemoteEvent" or cn == "UnreliableRemoteEvent" then
+        sig = remote.OnClientEvent
+    elseif cn == "BindableEvent" then
+        sig = remote.Event
+    end
+    if not sig then return nil end
+
+    local ok, conns = pcall(getconnections, sig)
+    if not ok or type(conns) ~= "table" then return nil end
+
+    local res, owners = {}, {}
+    for i, c in ipairs(conns) do
+        local okf, fn = pcall(function() return c.Function end)
+        local desc = "(ไม่ทราบ function)"
+        if okf and type(fn) == "function" then
+            local oki, src, line, name, nparams, isvar = pcall(debug.info, fn, "slna")
+            if oki then
+                desc = "src=" .. tostring(src) .. "  line=" .. tostring(line) .. "  name=" .. tostring(name ~= "" and name or "?")
+                    .. "  params=" .. tostring(nparams) .. (isvar and "+..." or "")
+            end
+            local okE, owner = pcall(function()
+                local env = getfenv(fn)
+                return env and env.script
+            end)
+            if okE and typeof(owner) == "Instance" then
+                local op = getPath(owner)
+                desc = desc .. "  script=" .. op
+                owners[#owners + 1] = op
+            end
+        end
+        local en = get(c, "Enabled")
+        res[#res + 1] = "#" .. i .. " enabled=" .. tostring(en) .. "  " .. desc
+    end
+    return res, owners
+end
+
+------------------------------------------------------------------
+-- SCAN (วนทั้งเกมรอบเดียว แล้วแยกหมวด)
+------------------------------------------------------------------
+local REMOTE_CLASSES = { RemoteEvent = true, RemoteFunction = true, UnreliableRemoteEvent = true }
+local BINDABLE_CLASSES = { BindableEvent = true, BindableFunction = true }
+local VALUE_CLASSES  = { StringValue = true, IntValue = true, NumberValue = true, BoolValue = true, ObjectValue = true, Vector3Value = true, CFrameValue = true, Color3Value = true, BrickColorValue = true }
+local SCRIPT_CLASSES = { Script = true, LocalScript = true, ModuleScript = true }
+
+local B = {
+    remotes = {}, bindables = {}, values = {}, prompts = {}, clicks = {}, touch = {}, scripts = {},
+    tools = {}, buttons = {}, textboxes = {}, labels = {}, seats = {}, spawns = {}, anims = {}, attrs = {},
+}
+local classCount, serviceCount, totalDesc = {}, {}, 0
+
+local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
+
+local function scanService(svc)
+    local ok, desc = pcall(svc.GetDescendants, svc)
+    if not ok then return end
+    serviceCount[svc.Name] = #desc
+
+    for i = 1, #desc do
+        local v = desc[i]
+        local cn = v.ClassName
+        totalDesc = totalDesc + 1
+        classCount[cn] = (classCount[cn] or 0) + 1
+
+        if REMOTE_CLASSES[cn] then
+            B.remotes[#B.remotes + 1] = v
+        elseif BINDABLE_CLASSES[cn] then
+            -- Bindable ใน UI/Particle ของ Players เยอะมากและไม่มีประโยชน์ เลยข้าม
+            if svc.Name ~= "Players" then B.bindables[#B.bindables + 1] = v end
+        elseif VALUE_CLASSES[cn] then
+            B.values[#B.values + 1] = v
+        elseif cn == "ProximityPrompt" then
+            B.prompts[#B.prompts + 1] = v
+        elseif cn == "ClickDetector" then
+            B.clicks[#B.clicks + 1] = v
+        elseif cn == "TouchTransmitter" then
+            B.touch[#B.touch + 1] = v
+        elseif SCRIPT_CLASSES[cn] then
+            B.scripts[#B.scripts + 1] = v
+        elseif cn == "Tool" or cn == "HopperBin" then
+            B.tools[#B.tools + 1] = v
+        elseif (cn == "TextButton" or cn == "ImageButton") and playerGui and v:IsDescendantOf(playerGui) then
+            B.buttons[#B.buttons + 1] = v
+        elseif cn == "TextBox" and playerGui and svc.Name == "Players" and v:IsDescendantOf(playerGui) then
+            B.textboxes[#B.textboxes + 1] = v
+        elseif cn == "TextLabel" and playerGui and svc.Name == "Players" and v:IsDescendantOf(playerGui) then
+            B.labels[#B.labels + 1] = v
+        elseif cn == "Seat" or cn == "VehicleSeat" then
+            B.seats[#B.seats + 1] = v
+        elseif cn == "SpawnLocation" then
+            B.spawns[#B.spawns + 1] = v
+        elseif cn == "Animation" then
+            B.anims[#B.anims + 1] = v
+        end
+
+        if CONFIG.SCAN_ATTRIBUTES then
+            local okA, a = pcall(v.GetAttributes, v)
+            if okA and type(a) == "table" and next(a) ~= nil then
+                B.attrs[#B.attrs + 1] = v
+            end
+        end
+
+        yieldMaybe()
+    end
+end
+
+------------------------------------------------------------------
+-- WRITERS
+------------------------------------------------------------------
+local I = "    "
+
+local function listSection(title, list, describe)
+    section(title .. "  (ทั้งหมด: " .. #list .. ")")
+    if #list == 0 then
+        w("(ไม่พบ)")
+        return
+    end
+    local shown = #list
+    if CONFIG.MAX_LIST > 0 and shown > CONFIG.MAX_LIST then shown = CONFIG.MAX_LIST end
+    for i = 1, shown do
+        local inst = list[i]
+        w("")
+        w("[" .. i .. "] " .. getPath(inst))
+        local ok, err = pcall(describe, inst)
+        if not ok then w(I .. "(อ่านค่าไม่ได้: " .. tostring(err) .. ")") end
+        yieldMaybe()
+    end
+    if shown < #list then
+        w("")
+        w("... เหลืออีก " .. (#list - shown) .. " รายการ ไม่ได้แสดง (เพิ่ม CONFIG.MAX_LIST)")
+    end
+end
+
+local function writeGameInfo(info, web)
+    section("1. GAME / SERVER INFO")
+    if web then
+        w("-- จาก games.roblox.com --")
+        kv("Name", web.name)
+        kv("Description", web.description)
+        if type(web.creator) == "table" then
+            kv("Creator", tostring(web.creator.name) .. " (" .. tostring(web.creator.type) .. ", id " .. tostring(web.creator.id) .. ")")
+        end
+        kv("Playing now", web.playing)
+        kv("Visits", web.visits)
+        kv("Favorites", web.favoritedCount)
+        kv("Max players", web.maxPlayers)
+        kv("Genre", web.genre)
+        kv("Root PlaceId", web.rootPlaceId)
+        kv("Created", web.created)
+        kv("Updated", web.updated)
+        w("-- จาก MarketplaceService --")
+    end
+    if not info and not web then kv("Game Name", "(ดึงชื่อเกมไม่ได้)") end
+    if info then
+        kv("Game Name", info.Name)
+        kv("Description", info.Description)
+        if type(info.Creator) == "table" then
+            kv("Creator", tostring(info.Creator.Name) .. " (" .. tostring(info.Creator.CreatorType) .. ", id " .. tostring(info.Creator.CreatorTargetId or info.Creator.Id) .. ")")
+        end
+        kv("Created", info.Created)
+        kv("Updated", info.Updated)
+    end
+    kv("PlaceId", game.PlaceId)
+    kv("GameId (UniverseId)", game.GameId)
+    kv("JobId", game.JobId)
+    kv("PlaceVersion", get(game, "PlaceVersion"))
+    kv("PrivateServerId", get(game, "PrivateServerId"))
+    kv("PrivateServerOwnerId", get(game, "PrivateServerOwnerId"))
+    kv("Players / Max", #Players:GetPlayers() .. " / " .. tostring(Players.MaxPlayers))
+    kv("Server uptime (s)", math.floor(workspace.DistributedGameTime))
+    kv("Date/Time (device)", os.date("%Y-%m-%d %H:%M:%S"))
+    kv("Roblox version", (version and version()) or "?")
+    kv("Executor", (identifyexecutor and select(1, identifyexecutor())) or "unknown")
+    kv("TouchEnabled", UserInputService.TouchEnabled)
+    kv("KeyboardEnabled", UserInputService.KeyboardEnabled)
+    kv("MouseEnabled", UserInputService.MouseEnabled)
+    kv("GamepadEnabled", UserInputService.GamepadEnabled)
+    kv("Executor funcs", (function()
+        local names = { "writefile", "appendfile", "isfile", "setclipboard", "getconnections", "hookfunction", "hookmetamethod", "getgc", "getrawmetatable", "decompile", "request", "firesignal", "fireclickdetector", "fireproximityprompt", "firetouchinterest" }
+        local have = {}
+        local env = (getgenv and getgenv()) or (getfenv and getfenv()) or {}
+        for _, n in ipairs(names) do
+            if env[n] then have[#have + 1] = n end
+        end
+        return table.concat(have, ", ")
+    end)())
+end
+
+local function writeLocalPlayer()
+    section("2. LOCAL PLAYER / CHARACTER")
+    kv("Name", LocalPlayer.Name)
+    local okP, ping = pcall(LocalPlayer.GetNetworkPing, LocalPlayer)
+    if okP and type(ping) == "number" then kv("Network ping (ms)", string.format("%.0f", ping * 1000)) end
+    props(LocalPlayer, { "DisplayName", "UserId", "AccountAge", "MembershipType", "Neutral", "TeamColor", "CameraMode", "CameraMaxZoomDistance", "CameraMinZoomDistance", "RespawnLocation", "HealthDisplayDistance", "NameDisplayDistance" })
+    local team = get(LocalPlayer, "Team")
+    kv("Team", team and team.Name or "none")
+    attrs(LocalPlayer)
+
+    local leader = LocalPlayer:FindFirstChild("leaderstats")
+    if leader then
+        w("")
+        w("-- leaderstats --")
+        for _, c in ipairs(leader:GetChildren()) do
+            kv(c.Name, get(c, "Value"), I)
+        end
+    end
+
+    local char = LocalPlayer.Character
+    w("")
+    kv("Character", char and getPath(char) or "nil")
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            w("-- Humanoid --")
+            props(hum, { "Health", "MaxHealth", "WalkSpeed", "UseJumpPower", "JumpPower", "JumpHeight", "HipHeight", "RigType", "AutoRotate", "Sit", "PlatformStand", "DisplayDistanceType", "FloorMaterial" }, I)
+            local okS, st = pcall(hum.GetState, hum)
+            if okS then kv("State", st, I) end
+        end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            w("-- HumanoidRootPart --")
+            props(root, { "Position", "CFrame", "AssemblyLinearVelocity", "Anchored", "CanCollide", "Size" }, I)
+        end
+        w("-- Character children --")
+        for _, c in ipairs(char:GetChildren()) do
+            w(I .. "[" .. c.ClassName .. "] " .. c.Name)
+        end
+        attrs(char)
+    end
+
+    local cam = workspace.CurrentCamera
+    if cam then
+        w("")
+        w("-- Camera --")
+        props(cam, { "CFrame", "FieldOfView", "CameraType", "CameraSubject", "ViewportSize" }, I)
+    end
+
+    local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if bp then
+        w("")
+        w("-- Backpack --")
+        for _, t in ipairs(bp:GetChildren()) do
+            w(I .. "[" .. t.ClassName .. "] " .. t.Name)
+        end
+    end
+end
+
+local function writePlayersAndTeams()
+    section("3. PLAYERS IN SERVER")
+    for i, p in ipairs(Players:GetPlayers()) do
+        w("")
+        w("[" .. i .. "] " .. p.Name .. (p == LocalPlayer and "  <-- เรา" or ""))
+        props(p, { "DisplayName", "UserId", "AccountAge", "MembershipType" }, I)
+        local t = get(p, "Team")
+        kv("Team", t and t.Name or "none", I)
+        local ch = p.Character
+        local root = ch and ch:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            kv("Position", root.Position, I)
+            if myPos and p ~= LocalPlayer then
+                kv("Distance", string.format("%.1f", (root.Position - myPos).Magnitude), I)
+            end
+        end
+        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+        if hum then kv("Health", tostring(hum.Health) .. " / " .. tostring(hum.MaxHealth), I) end
+        local ls = p:FindFirstChild("leaderstats")
+        if ls then
+            for _, c in ipairs(ls:GetChildren()) do kv("stat: " .. c.Name, get(c, "Value"), I) end
+        end
+        yieldMaybe()
+    end
+
+    local okT, Teams = pcall(game.GetService, game, "Teams")
+    if okT and Teams then
+        local list = Teams:GetChildren()
+        w("")
+        w("-- TEAMS (" .. #list .. ") --")
+        for _, t in ipairs(list) do
+            w(I .. "[" .. t.ClassName .. "] " .. t.Name
+                .. "  color=" .. tostring(get(t, "TeamColor"))
+                .. "  autoAssignable=" .. tostring(get(t, "AutoAssignable"))
+                .. "  players=" .. tostring(#t:GetPlayers()))
+        end
+    end
+end
+
+local function writeWorldSettings()
+    section("4. WORKSPACE / LIGHTING / STARTER SETTINGS")
+    w("-- Workspace --")
+    props(workspace, { "Gravity", "FallenPartsDestroyHeight", "StreamingEnabled", "StreamingMinRadius", "StreamingTargetRadius", "AirDensity", "GlobalWind", "PhysicsSteppingMethod", "Retargeting", "AllowThirdPartySales" }, I)
+    attrs(workspace, I)
+
+    w("")
+    w("-- Lighting --")
+    props(Lighting, { "ClockTime", "TimeOfDay", "Brightness", "Ambient", "OutdoorAmbient", "ColorShift_Top", "ColorShift_Bottom", "FogStart", "FogEnd", "FogColor", "GlobalShadows", "ExposureCompensation", "GeographicLatitude", "Technology" }, I)
+
+    local okS, SP = pcall(game.GetService, game, "StarterPlayer")
+    if okS and SP then
+        w("")
+        w("-- StarterPlayer --")
+        props(SP, { "CharacterWalkSpeed", "CharacterJumpPower", "CharacterJumpHeight", "CharacterMaxHealth", "CharacterUseJumpPower", "CameraMode", "EnableMouseLockOption", "LoadCharacterAppearance", "HealthDisplayDistance", "NameDisplayDistance", "AutoJumpEnabled" }, I)
+    end
+
+    w("")
+    w("-- Players service --")
+    props(Players, { "RespawnTime", "CharacterAutoLoads", "MaxPlayers", "PreferredPlayers", "BubbleChat", "ClassicChat" }, I)
+end
+
+local function writeClassSummary()
+    section("5. CLASS / SERVICE SUMMARY  (instances ทั้งหมด: " .. totalDesc .. ")")
+    w("-- ต่อ service --")
+    local sn = {}
+    for k in pairs(serviceCount) do sn[#sn + 1] = k end
+    table.sort(sn, function(a, b) return serviceCount[a] > serviceCount[b] end)
+    for _, k in ipairs(sn) do w(string.format("%s%-28s %d", I, k, serviceCount[k])) end
+
+    w("")
+    w("-- Class ที่พบมากสุด 60 อันดับ --")
+    local cn = {}
+    for k in pairs(classCount) do cn[#cn + 1] = k end
+    table.sort(cn, function(a, b) return classCount[a] > classCount[b] end)
+    for i = 1, math.min(60, #cn) do w(string.format("%s%-28s %d", I, cn[i], classCount[cn[i]])) end
+end
+
+local function callCode(inst)
+    local p = getPath(inst)
+    local cn = inst.ClassName
+    if cn == "RemoteEvent" or cn == "UnreliableRemoteEvent" then
+        return p .. ":FireServer()"
+    elseif cn == "RemoteFunction" then
+        return p .. ":InvokeServer()"
+    elseif cn == "BindableEvent" then
+        return p .. ":Fire()   -- local เท่านั้น"
+    else
+        return p .. ":Invoke()   -- local เท่านั้น"
+    end
+end
+
+local function writeRemotes(list)
+    section("6. REMOTES / BINDABLES  (ทั้งหมด: " .. #list .. ")")
+
+    local byClass, byRoot = {}, {}
+    for _, r in ipairs(list) do
+        byClass[r.ClassName] = (byClass[r.ClassName] or 0) + 1
+        local rn = rootOf(r)
+        byRoot[rn] = (byRoot[rn] or 0) + 1
+    end
+    w("-- แยกตามชนิด --")
+    for k, v in pairs(byClass) do w(I .. k .. ": " .. v) end
+    w("-- แยกตามที่อยู่ --")
+    for k, v in pairs(byRoot) do w(I .. k .. ": " .. v) end
+
+    local handlers, hOrder = {}, {}
+    for i, inst in ipairs(list) do
+        w("")
+        w("[" .. i .. "] " .. inst.ClassName)
+        kv("Name", inst.Name, I)
+        kv("Path", getPath(inst), I)
+        local par = inst.Parent
+        kv("Parent", par and (par.Name .. " (" .. par.ClassName .. ")") or "nil", I)
+        kv("Root service", rootOf(inst), I)
+        kv("Call", callCode(inst), I)
+        local ls, owners = describeListeners(inst)
+        local hint
+        if inst.ClassName == "RemoteFunction" then
+            hint = "client -> server (InvokeServer รอค่าตอบกลับ)"
+        elseif ls and #ls > 0 then
+            hint = "server -> client (มี listener ฝั่ง client " .. #ls .. " ตัว)"
+        elseif ls then
+            hint = "น่าจะ client -> server (ไม่มี listener ฝั่ง client)"
+        else
+            hint = "ไม่ทราบ (executor ไม่มี getconnections)"
+        end
+        kv("Direction hint", hint, I)
+        if ls then
+            kv("Client listeners", #ls, I)
+            for _, d in ipairs(ls) do w(I .. I .. d) end
+            for _, o in ipairs(owners or {}) do
+                if not handlers[o] then
+                    handlers[o] = {}
+                    hOrder[#hOrder + 1] = o
+                end
+                table.insert(handlers[o], inst.Name)
+            end
+        end
+        attrs(inst, I)
+        yieldMaybe()
+    end
+
+    if #hOrder > 0 then
+        w("")
+        w("-- LISTENER MAP: สคริปต์ฝั่ง client ที่รับ remote (บอกว่า remote ไหนเกี่ยวกับระบบไหน) --")
+        table.sort(hOrder)
+        for _, o in ipairs(hOrder) do
+            w(o .. "  [" .. #handlers[o] .. "]")
+            wrapJoin(handlers[o], I, 150)
+        end
+    end
+
+    -- ลิสต์ก๊อปวางแบบเดิม (เฉพาะ remote ที่ยิงไปเซิร์ฟเวอร์)
+    w("")
+    w("-- COPY-PASTE LIST (เฉพาะ RemoteEvent / RemoteFunction) --")
+    local n = 0
+    for _, inst in ipairs(list) do
+        local cn = inst.ClassName
+        if cn == "RemoteEvent" or cn == "UnreliableRemoteEvent" or cn == "RemoteFunction" then
+            n = n + 1
+            w(n .. ".")
+            w(callCode(inst))
+            w("")
+        end
+    end
+end
+
+local function writeAttributes(list)
+    section("8. ATTRIBUTES  (instances ที่มี attribute: " .. #list .. ")")
+    if #list == 0 then w("(ไม่พบ)") return end
+    local shown = #list
+    if CONFIG.MAX_LIST > 0 and shown > CONFIG.MAX_LIST then shown = CONFIG.MAX_LIST end
+    for i = 1, shown do
+        w("")
+        w("[" .. i .. "] " .. getPath(list[i]) .. "  (" .. list[i].ClassName .. ")")
+        attrs(list[i], I)
+        yieldMaybe()
+    end
+    if shown < #list then w("... เหลืออีก " .. (#list - shown) .. " รายการ") end
+end
+
+local function treeNode(inst, depth)
+    local indent = string.rep("  ", depth)
+    local label = "[" .. inst.ClassName .. "] " .. inst.Name
+    if VALUE_CLASSES[inst.ClassName] then label = label .. " = " .. fmt(get(inst, "Value")) end
+    w(indent .. label)
+    yieldMaybe()
+
+    local kids = inst:GetChildren()
+    if depth >= CONFIG.TREE_DEPTH then
+        if #kids > 0 then w(indent .. "  ... (" .. #kids .. " children ถูกซ่อนด้วย TREE_DEPTH)") end
+        return
+    end
+    local shown = math.min(#kids, CONFIG.TREE_MAX_CHILDREN)
+    for i = 1, shown do treeNode(kids[i], depth + 1) end
+    if #kids > shown then w(indent .. "  ... +" .. (#kids - shown) .. " children อื่นๆ") end
+end
+
+local function writeTree()
+    section("11. INSTANCE TREE  (depth " .. CONFIG.TREE_DEPTH .. ")")
+    for _, svc in ipairs(game:GetChildren()) do
+        if not CONFIG.SKIP_SERVICES[svc.Name] then
+            local ok, err = pcall(treeNode, svc, 0)
+            if not ok then w("(tree error " .. svc.Name .. ": " .. tostring(err) .. ")") end
+        end
+    end
+end
+
+------------------------------------------------------------------
+-- DESCRIBERS (รายละเอียดแต่ละหมวด)
+------------------------------------------------------------------
+local function descValue(v)
+    kv("Class", v.ClassName, I)
+    kv("Value", get(v, "Value"), I)
+    attrs(v, I)
+end
+
+local function descPrompt(v)
+    props(v, { "ActionText", "ObjectText", "Enabled", "HoldDuration", "MaxActivationDistance", "KeyboardKeyCode", "GamepadKeyCode", "RequiresLineOfSight", "ClickablePrompt", "Exclusivity", "Style" }, I)
+    kv("Parent", v.Parent and (v.Parent.Name .. " (" .. v.Parent.ClassName .. ")") or "nil", I)
+    local pos = whereIs(v)
+    if pos then kv("Position", pos, I) end
+    attrs(v, I)
+end
+
+local function descClick(v)
+    props(v, { "MaxActivationDistance", "CursorIcon" }, I)
+    kv("Parent", v.Parent and (v.Parent.Name .. " (" .. v.Parent.ClassName .. ")") or "nil", I)
+    local pos = whereIs(v)
+    if pos then kv("Position", pos, I) end
+    attrs(v, I)
+end
+
+local function descTouch(v)
+    local par = v.Parent
+    if not par then return end
+    kv("Part", par.Name .. " (" .. par.ClassName .. ")", I)
+    props(par, { "CanTouch", "CanCollide", "Anchored", "Transparency", "Size" }, I)
+    local pos = whereIs(v)
+    if pos then kv("Position", pos, I) end
+end
+
+local function descScript(v)
+    kv("Class", v.ClassName, I)
+    props(v, { "Enabled", "RunContext", "Disabled" }, I)
+    kv("Root service", rootOf(v), I)
+end
+
+local function uiPath(inst)
+    local parts, cur, n = {}, inst, 0
+    while cur and n < 40 do
+        n = n + 1
+        table.insert(parts, 1, cur.Name)
+        if cur:IsA("LayerCollector") then break end
+        cur = cur.Parent
+    end
+    return table.concat(parts, " > ")
+end
+
+-- ข้อความของ label/ปุ่มที่อยู่ใกล้ๆ ช่องนั้น ใช้เดาว่าช่องนี้คืออะไร
+local function nearbyTexts(inst)
+    local found, seen = {}, {}
+    local cur, depth = inst.Parent, 0
+    while cur and depth < 3 do
+        depth = depth + 1
+        local okK, kids = pcall(cur.GetChildren, cur)
+        if okK then
+            for _, k in ipairs(kids) do
+                if k ~= inst and (k.ClassName == "TextLabel" or k.ClassName == "TextButton") then
+                    local t = get(k, "Text")
+                    if type(t) == "string" and t ~= "" and #t <= 60 and not seen[t] then
+                        seen[t] = true
+                        found[#found + 1] = k.Name .. "=" .. fmt(t)
+                        if #found >= 8 then return found end
+                    end
+                end
+            end
+        end
+        cur = cur.Parent
+        if cur and cur:IsA("LayerCollector") then break end
+    end
+    return found
+end
+
+local function descTool(v)
+    kv("Class", v.ClassName, I)
+    props(v, { "ToolTip", "CanBeDropped", "RequiresHandle", "Enabled", "ManualActivationOnly", "TextureId" }, I)
+    local parts = {}
+    for _, c in ipairs(v:GetChildren()) do
+        parts[#parts + 1] = c.Name .. "(" .. c.ClassName .. ")"
+        if #parts >= 25 then parts[#parts + 1] = "..." break end
+    end
+    kv("Children", table.concat(parts, ", "), I)
+    attrs(v, I)
+end
+
+local function descButton(v)
+    kv("Class", v.ClassName, I)
+    props(v, { "Text", "Visible", "Active", "Interactable", "AbsolutePosition", "AbsoluteSize", "ZIndex" }, I)
+    local sg = v:FindFirstAncestorOfClass("ScreenGui")
+    if sg then kv("ScreenGui", sg.Name .. "  (Enabled=" .. tostring(sg.Enabled) .. ")", I) end
+    kv("UI path", uiPath(v), I)
+    local near = nearbyTexts(v)
+    if #near > 0 then kv("Nearby labels", table.concat(near, " | "), I) end
+    attrs(v, I)
+end
+
+local function descTextBox(v)
+    props(v, { "Text", "PlaceholderText", "ClearTextOnFocus", "MultiLine", "TextEditable", "Visible", "Active", "TextSize", "AbsolutePosition", "AbsoluteSize" }, I)
+    local sg = v:FindFirstAncestorOfClass("ScreenGui")
+    if sg then kv("ScreenGui", sg.Name .. "  (Enabled=" .. tostring(sg.Enabled) .. ")", I) end
+    kv("UI path", uiPath(v), I)
+    local near = nearbyTexts(v)
+    if #near > 0 then kv("Nearby labels", table.concat(near, " | "), I) end
+    attrs(v, I)
+end
+
+local function descSeat(v)
+    kv("Class", v.ClassName, I)
+    props(v, { "Disabled", "Occupant", "MaxSpeed", "Torque", "Throttle", "Steer" }, I)
+    local pos = whereIs(v)
+    if pos then kv("Position", pos, I) end
+end
+
+local function descSpawn(v)
+    props(v, { "Enabled", "Neutral", "TeamColor", "Duration", "AllowTeamChangeOnTouch" }, I)
+    local pos = whereIs(v)
+    if pos then kv("Position", pos, I) end
+end
+
+local function descAnim(v)
+    props(v, { "AnimationId" }, I)
+end
+
+
+------------------------------------------------------------------
+-- STATUS (ข้อความบนจอ บอกความคืบหน้า - ใช้ภาษาอังกฤษกันฟอนต์เพี้ยน)
+------------------------------------------------------------------
+local statusLabel
+local function setStatus(text)
+    print("[Dumper] " .. text)
+    if not CONFIG.SHOW_GUI_MESSAGE then return end
+    pcall(function()
+        if not statusLabel or not statusLabel.Parent then
+            local gui = Instance.new("ScreenGui")
+            gui.Name = "DumpMessageGUI"
+            gui.ResetOnSpawn = false
+            gui.Parent = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
+
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(0, 400, 0, 80)
+            label.Position = UDim2.new(0.5, -200, 0.85, -40)
+            label.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            label.TextWrapped = true
+            label.Font = Enum.Font.SourceSansBold
+            label.TextSize = 16
+            label.ZIndex = 10
+            label.Parent = gui
+            statusLabel = label
+        end
+        statusLabel.Text = text
+    end)
+end
+
+------------------------------------------------------------------
+-- REMOTES จัดกลุ่มตามโฟลเดอร์ (อ่านง่ายเวลามีหลายร้อยตัว)
+------------------------------------------------------------------
+local function writeRemotesByFolder(list)
+    section("6a. REMOTES จัดกลุ่มตามโฟลเดอร์  (E=Event  F=Function  U=Unreliable  b=Bindable)")
+    local groups, order = {}, {}
+    for _, r in ipairs(list) do
+        local par = r.Parent
+        local key = par and getPath(par) or "nil"
+        if not groups[key] then
+            groups[key] = {}
+            order[#order + 1] = key
+        end
+        local cn = r.ClassName
+        local tag = (cn == "RemoteEvent" and "E") or (cn == "RemoteFunction" and "F") or (cn == "UnreliableRemoteEvent" and "U") or "b"
+        table.insert(groups[key], r.Name .. "(" .. tag .. ")")
+    end
+    table.sort(order)
+    for _, key in ipairs(order) do
+        local names = groups[key]
+        w("")
+        w(key .. "  [" .. #names .. "]")
+        w(I .. table.concat(names, ", "))
+        yieldMaybe()
+    end
+end
+
+
+------------------------------------------------------------------
+-- WEB INFO + เครื่องมือจัดกลุ่ม
+------------------------------------------------------------------
+local function fetchWebInfo()
+    if not CONFIG.FETCH_WEB_INFO then return nil end
+    local req = request or http_request or (syn and syn.request) or (http and http.request)
+    if not req then return nil end
+    local okR, res = pcall(req, { Url = "https://games.roblox.com/v1/games?universeIds=" .. tostring(game.GameId), Method = "GET" })
+    if not okR or type(res) ~= "table" or type(res.Body) ~= "string" then return nil end
+    local okJ, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
+    if okJ and type(data) == "table" and type(data.data) == "table" and type(data.data[1]) == "table" then
+        return data.data[1]
+    end
+    return nil
+end
+
+local parentCache = {}
+local function parentKey(inst)
+    local p = inst.Parent
+    if not p then return "nil" end
+    local k = parentCache[p]
+    if not k then
+        k = getPath(p)
+        parentCache[p] = k
+    end
+    return k
+end
+
+local function groupByParent(list)
+    local groups, order = {}, {}
+    for _, inst in ipairs(list) do
+        local key = parentKey(inst)
+        local g = groups[key]
+        if not g then
+            g = {}
+            groups[key] = g
+            order[#order + 1] = key
+        end
+        g[#g + 1] = inst
+        yieldMaybe()
+    end
+    table.sort(order)
+    return groups, order
+end
+
+-- รายการแบบย่อ จัดกลุ่มตามโฟลเดอร์
+local function writeCompact(title, list, label)
+    section(title .. "  (ทั้งหมด: " .. #list .. ")")
+    if #list == 0 then
+        w("(ไม่พบ)")
+        return
+    end
+    local groups, order = groupByParent(list)
+    for _, key in ipairs(order) do
+        local g = groups[key]
+        w("")
+        w(key .. "  [" .. #g .. "]")
+        local items = {}
+        for _, v in ipairs(g) do items[#items + 1] = label(v) end
+        wrapJoin(items, I, 150)
+        yieldMaybe()
+    end
+end
+
+local function labelScript(v)
+    local cn = v.ClassName
+    local tag = (cn == "ModuleScript" and "M") or (cn == "LocalScript" and "L") or "S"
+    if get(v, "Enabled") == false then tag = tag .. "x" end
+    return v.Name .. "(" .. tag .. ")"
+end
+
+local function labelAnim(v)
+    return v.Name .. "=" .. tostring(get(v, "AnimationId"))
+end
+
+local function labelBindable(v)
+    return v.Name .. "(" .. (v.ClassName == "BindableEvent" and "BE" or "BF") .. ")"
+end
+
+local function valueLine(v)
+    return v.Name .. " (" .. v.ClassName .. ") = " .. fmt(get(v, "Value"))
+end
+
+local function writeValuesGrouped(list)
+    section("7. VALUE OBJECTS  (ทั้งหมด: " .. #list .. ")  [โฟลเดอร์ที่มีเกิน " .. CONFIG.GROUP_LIMIT .. " ตัวจะสรุปเป็นกลุ่ม]")
+    if #list == 0 then
+        w("(ไม่พบ)")
+        return
+    end
+    local groups, order = groupByParent(list)
+    for _, key in ipairs(order) do
+        local g = groups[key]
+        w("")
+        if #g <= CONFIG.GROUP_LIMIT then
+            w(key .. "  [" .. #g .. "]")
+            for _, v in ipairs(g) do w(I .. valueLine(v)) end
+        else
+            local byClass, cs = {}, {}
+            for _, v in ipairs(g) do byClass[v.ClassName] = (byClass[v.ClassName] or 0) + 1 end
+            for k, n in pairs(byClass) do cs[#cs + 1] = k .. "=" .. n end
+            table.sort(cs)
+            w(key .. "  [" .. #g .. " values: " .. table.concat(cs, ", ") .. "]  (สรุป)")
+            local shown = math.min(CONFIG.GROUP_SAMPLE, #g)
+            for i = 1, shown do w(I .. valueLine(g[i])) end
+            w(I .. "... +" .. (#g - shown) .. " more")
+        end
+        yieldMaybe()
+    end
+end
+
+local function writeAttributesGrouped(list)
+    section("8. ATTRIBUTES  (instances ที่มี attribute: " .. #list .. ")  [โฟลเดอร์ที่มีเกิน " .. CONFIG.GROUP_LIMIT .. " ตัวจะสรุปเป็นกลุ่ม]")
+    if #list == 0 then
+        w("(ไม่พบ)")
+        return
+    end
+    local groups, order = groupByParent(list)
+    for _, key in ipairs(order) do
+        local g = groups[key]
+        w("")
+        local limit = #g
+        if #g > CONFIG.GROUP_LIMIT then
+            limit = math.min(CONFIG.GROUP_SAMPLE, #g)
+            w(key .. "  [" .. #g .. " instances]  (สรุป โชว์ " .. limit .. " ตัวแรก)")
+        else
+            w(key .. "  [" .. #g .. "]")
+        end
+        for i = 1, limit do
+            w(I .. g[i].Name .. " (" .. g[i].ClassName .. ")")
+            attrs(g[i], I .. I)
+        end
+        if limit < #g then w(I .. "... +" .. (#g - limit) .. " more") end
+        yieldMaybe()
+    end
+end
+
+
+local function writeLabels(list)
+    section("9j. UI TEXT LABELS  (ข้อความที่แสดงใน PlayerGui แยกตาม ScreenGui)  (ทั้งหมด: " .. #list .. ")")
+    if #list == 0 then
+        w("(ไม่พบ)")
+        return
+    end
+    local groups, order = {}, {}
+    for _, v in ipairs(list) do
+        local t = get(v, "Text")
+        if type(t) == "string" and t ~= "" then
+            local sg = v:FindFirstAncestorOfClass("ScreenGui")
+            local key = sg and (sg.Name .. "  (Enabled=" .. tostring(sg.Enabled) .. ")") or "?"
+            local g = groups[key]
+            if not g then
+                g = {}
+                groups[key] = g
+                order[#order + 1] = key
+            end
+            g[#g + 1] = v
+        end
+        yieldMaybe()
+    end
+    table.sort(order)
+    for _, key in ipairs(order) do
+        local g = groups[key]
+        w("")
+        w(key .. "  [" .. #g .. " labels]")
+        local shown = math.min(#g, CONFIG.LABEL_LIMIT)
+        for i = 1, shown do
+            local v = g[i]
+            local hidden = (get(v, "Visible") == false) and "  (hidden)" or ""
+            w(I .. uiPath(v) .. " : " .. fmt(get(v, "Text")) .. hidden)
+        end
+        if shown < #g then w(I .. "... +" .. (#g - shown) .. " more (เพิ่ม CONFIG.LABEL_LIMIT)") end
+    end
+end
+
+local function writeLegend()
+    section("0. LEGEND  (วิธีอ่านไฟล์นี้ / ความหมายของแต่ละช่อง)")
+    w("Path ............ ที่อยู่ instance เขียนเป็นโค้ดได้เลย เช่น game:GetService(\"X\").A.B  |  <detached> = ไม่ได้อยู่ใน game")
+    w("")
+    w("[REMOTES]")
+    w("E / RemoteEvent ........ ยิงด้วย :FireServer()  (ส่งข้อมูลไปเซิร์ฟเวอร์ ไม่รอค่าตอบ)")
+    w("F / RemoteFunction ..... เรียกด้วย :InvokeServer()  (รอค่าตอบกลับจากเซิร์ฟเวอร์)")
+    w("U / UnreliableRemoteEvent  แบบ E แต่ไม่รับประกันว่าถึง (ใช้กับข้อมูลที่ส่งถี่ๆ)")
+    w("BE / BF / b ............ Bindable ใช้คุยกันภายในฝั่ง client เท่านั้น ไม่ผ่านเซิร์ฟเวอร์")
+    w("Direction hint ......... ทิศทางที่น่าจะเป็น (เดาจากว่ามี listener ฝั่ง client ไหม ไม่ใช่ค่าแน่นอน)")
+    w("Client listeners ....... จำนวน function ฝั่ง client ที่ผูกกับ OnClientEvent ของ remote นั้น")
+    w("   params=N ........... function รับอาร์กิวเมนต์ N ตัว ('+...' = รับเพิ่มได้ไม่จำกัด)")
+    w("   script=<path> ...... สคริปต์ที่เป็นเจ้าของ function นั้น (บอกว่า remote นี้เกี่ยวกับระบบไหน)")
+    w("LISTENER MAP .......... สรุปว่าสคริปต์ไหนรับ remote ตัวไหนบ้าง")
+    w("")
+    w("[VALUES / ATTRIBUTES]")
+    w("ชื่อ (ชนิด) = ค่า ........ ValueObject ที่เกมเก็บค่าไว้ เช่น IntValue, StringValue")
+    w("@ชื่อ <ชนิด> : ค่า ....... Attribute ที่เกมใช้เก็บสถานะของ instance นั้น")
+    w("(สรุป) ............... โฟลเดอร์นั้นมีรายการเกิน GROUP_LIMIT (" .. CONFIG.GROUP_LIMIT .. ") จึงโชว์ตัวอย่าง GROUP_SAMPLE (" .. CONFIG.GROUP_SAMPLE .. ") ตัวแล้วบอกจำนวนที่เหลือ")
+    w("")
+    w("[SCRIPTS]  S=Script  L=LocalScript  M=ModuleScript  x=ปิดอยู่ (Enabled=false)")
+    w("")
+    w("[WORLD / UI]")
+    w("Position ............. พิกัดโลก (studs)   dist = ระยะห่างจากตัวเรา")
+    w("UI path .............. ลำดับชั้นใน ScreenGui เช่น Main > Shop > CodeBox")
+    w("Nearby labels ........ ข้อความของ label/ปุ่มที่อยู่ข้างๆ ใช้ดูว่าช่องหรือปุ่มนั้นคืออะไร")
+    w("9i TEXT BOXES ........ ช่องกรอกข้อความทั้งหมด (Text = ค่าที่กรอกอยู่ / PlaceholderText = ข้อความจาง ๆ บอกว่าให้กรอกอะไร)")
+    w("9j UI TEXT LABELS .... ข้อความทุกอย่างที่แสดงบนหน้าจอ แยกตาม ScreenGui")
+    w("")
+    w("[หมวดในไฟล์]  1 เกม/เซิร์ฟ  2 ผู้เล่นเรา  3 ผู้เล่น/ทีม  4 ค่าโลก  5 สรุปคลาส  6 Remotes  7 Values  8 Attributes")
+    w("               9a-9j ของที่โต้ตอบได้/UI  10 Scripts  11 โครงสร้าง tree")
+end
+
+------------------------------------------------------------------
+-- MAIN
+------------------------------------------------------------------
+local savedPath, finalStatus, summaryName, gameName
+
+-- รันแต่ละหมวดแยกกัน: หมวดไหนพัง หมวดอื่นยังทำงานต่อ
+local function run(name, fn, ...)
+    local okR, errR = pcall(fn, ...)
+    if not okR then
+        w("")
+        w("!!! หมวด [" .. name .. "] ผิดพลาด: " .. tostring(errR))
+        warn("[Dumper] section " .. name .. " failed: " .. tostring(errR))
+    end
+end
+
+local function main()
+    myPos = getRootPos()
+    setStatus("1/4 Preparing file...")
+
+    -- 1) เตรียมไฟล์ก่อนสแกน (จะได้รู้ทันทีว่าเซฟได้ไหม)
+    local info
+    local okI, res = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
+    if okI and type(res) == "table" then info = res end
+    if not info then
+        local okI2, res2 = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId, Enum.InfoType.Asset)
+        if okI2 and type(res2) == "table" then info = res2 end
+    end
+    local web = fetchWebInfo()
+    gameName = (info and info.Name) or (web and web.name) or nil
+
+    local stamp = os.date("%Y%m%d_%H%M%S")
+    local gname = tostring(gameName or get(game, "Name") or "Game")
+    gname = gname:gsub("[^%w_%-]", "_"):sub(1, 40)
+    local fileName = CONFIG.FILE_NAME or ("Dump_" .. gname .. "_" .. tostring(game.PlaceId) .. "_" .. stamp .. ".txt")
+    summaryName = "Summary_" .. gname .. "_" .. tostring(game.PlaceId) .. "_" .. stamp .. ".txt"
+    Out.path = chooseOutputPath(fileName)
+    if Out.path then
+        print("[Dumper] output file: " .. Out.path)
+    else
+        warn("[Dumper] writefile ใช้ไม่ได้ จะคัดลอกลง clipboard แทนตอนจบ")
+    end
+
+    Out.tee = true
+    w(string.rep("#", 72))
+    w("# Remote & Map Dumper v3")
+    w("# Game : " .. tostring(gameName or "?") .. "  (PlaceId " .. tostring(game.PlaceId) .. ")")
+    w("# Time : " .. os.date("%Y-%m-%d %H:%M:%S"))
+    w(string.rep("#", 72))
+    run("0 legend", writeLegend)
+
+    -- 2) สแกนทั้งเกม
+    setStatus("2/4 Scanning game... (may take a while)")
+    for _, svc in ipairs(game:GetChildren()) do
+        if not CONFIG.SKIP_SERVICES[svc.Name] then
+            local okS, errS = pcall(scanService, svc)
+            if not okS then warn("[Dumper] scan " .. svc.Name .. " failed: " .. tostring(errS)) end
+        end
+    end
+
+    -- 3) เขียนข้อมูลทั้งหมด
+    setStatus("3/4 Writing data... (" .. totalDesc .. " instances)")
+    run("1 game info",      writeGameInfo, info, web)
+    run("2 local player",   writeLocalPlayer)
+    run("3 players/teams",  writePlayersAndTeams)
+    run("4 world settings", writeWorldSettings)
+    run("5 class summary",  writeClassSummary)
+    run("6a remotes folder", writeRemotesByFolder, B.remotes)
+    Out.tee = false
+    run("6 remotes",        writeRemotes, B.remotes)
+    run("6b bindables",     writeCompact, "6b. BINDABLES (นอก Players)  BE=BindableEvent  BF=BindableFunction", B.bindables, labelBindable)
+    run("7 values",         writeValuesGrouped, B.values)
+    run("8 attributes",     writeAttributesGrouped, B.attrs)
+    run("9a prompts",       listSection, "9a. PROXIMITY PROMPTS", B.prompts, descPrompt)
+    run("9b clickers",      listSection, "9b. CLICK DETECTORS", B.clicks, descClick)
+    run("9c touch",         listSection, "9c. TOUCH INTERESTS (ชิ้นส่วนที่ตอบสนองเมื่อสัมผัส)", B.touch, descTouch)
+    run("9d tools",         listSection, "9d. TOOLS", B.tools, descTool)
+    run("9e buttons",       listSection, "9e. GUI BUTTONS (PlayerGui)", B.buttons, descButton)
+    run("9i textboxes",     listSection, "9i. TEXT BOXES (ช่องกรอกข้อความ)", B.textboxes, descTextBox)
+    run("9j labels",        writeLabels, B.labels)
+    run("9f seats",         listSection, "9f. SEATS / VEHICLE SEATS", B.seats, descSeat)
+    run("9g spawns",        listSection, "9g. SPAWN LOCATIONS", B.spawns, descSpawn)
+    run("9h animations",    writeCompact, "9h. ANIMATIONS (Name=AnimationId)", B.anims, labelAnim)
+    run("10 scripts",       writeCompact, "10. SCRIPTS  S=Script  L=LocalScript  M=ModuleScript  x=ปิดอยู่", B.scripts, labelScript)
+    if CONFIG.DUMP_TREE then run("11 tree", writeTree) end
+
+    Out.tee = true
+    section("END")
+    w("Remotes: " .. #B.remotes .. " | Bindables: " .. #B.bindables .. " | Values: " .. #B.values .. " | Prompts: " .. #B.prompts
+        .. " | Clickers: " .. #B.clicks .. " | Scripts: " .. #B.scripts)
+    w("Instances scanned: " .. totalDesc .. " | Time used: " .. string.format("%.1f", os.clock() - startClock) .. "s")
+end
+
+local ok, err = xpcall(main, function(e) return tostring(e) .. "\n" .. debug.traceback() end)
+if not ok then
+    w("")
+    w("!!! ERROR ระหว่างดั้ม: " .. tostring(err))
+    warn("[Dumper] error: " .. tostring(err))
+end
+
+-- 4) จบงาน: เขียนส่วนที่เหลือ / สำรองด้วย clipboard
+setStatus("4/4 Saving...")
+if Out.path and Out.canAppend then
+    flush(true)
+    savedPath = Out.path
+elseif Out.path and not Out.canAppend and writefile then
+    local okW = pcall(writefile, Out.path, table.concat(Out.buf, "\n") .. "\n")
+    if okW then savedPath = Out.path end
+end
+
+-- ไฟล์สรุปสั้น
+local summaryPath
+if CONFIG.SUMMARY_FILE and #Out.sbuf > 0 and writefile and summaryName then
+    local sp = chooseOutputPath(summaryName)
+    if sp then
+        local okSW = pcall(writefile, sp, table.concat(Out.sbuf, "\n") .. "\n")
+        if okSW then summaryPath = sp end
+    end
+end
+
+-- อ่านไฟล์กลับมาเช็คว่ามีจริงและมีข้อมูล
+local verify = ""
+if savedPath and readfile then
+    local okR, content = pcall(readfile, savedPath)
+    if okR and type(content) == "string" then
+        verify = ", " .. #content .. " bytes"
+    else
+        verify = ", (cannot read back)"
+    end
+end
+
+if savedPath then
+    finalStatus = "DONE. Saved: " .. savedPath .. " (" .. Out.lines .. " lines" .. verify .. ")"
+elseif setclipboard then
+    pcall(setclipboard, table.concat(Out.buf, "\n"))
+    finalStatus = "Could not save file -> copied to clipboard (" .. Out.lines .. " lines)"
+else
+    finalStatus = "FAILED: executor has no writefile and no setclipboard"
+end
+if summaryPath then finalStatus = finalStatus .. "  | Summary: " .. summaryPath end
+if not ok then finalStatus = finalStatus .. "  [had errors, see file/console]" end
+
+setStatus(finalStatus)
+task.delay(20, function()
+    pcall(function() statusLabel.Parent:Destroy() end)
+end)
