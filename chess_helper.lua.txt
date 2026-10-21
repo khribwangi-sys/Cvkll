@@ -439,6 +439,10 @@ end
 
 local searchDeadline = 0
 local searchNodes = 0
+local searchTimedOut = false
+local analysisGeneration = 0
+local activeSearchGeneration = 0
+local searchRunning = false
 local transpositionTable = {}
 local transpositionEntries = 0
 local transpositionHits = 0
@@ -493,8 +497,8 @@ local function checkSearchTime()
     if searchNodes % 256 == 0 and task and task.wait then
         task.wait()
     end
-    if searchNodes % 64 == 0 and os.clock() >= searchDeadline then
-        error("SEARCH_TIMEOUT", 0)
+    if activeSearchGeneration ~= analysisGeneration or (searchNodes % 64 == 0 and os.clock() >= searchDeadline) then
+        searchTimedOut = true
     end
 end
 
@@ -534,6 +538,9 @@ local quiescence
 
 quiescence = function(state, alpha, beta, ply, qDepth)
     checkSearchTime()
+    if searchTimedOut then
+        return 0
+    end
     local white = state.whiteToMove
     local inCheck = isInCheck(state, white)
     local perspective = white and 1 or -1
@@ -580,6 +587,9 @@ quiescence = function(state, alpha, beta, ply, qDepth)
     for _, move in ipairs(moves) do
         local child = applyMove(state, move)
         local score = -quiescence(child, -beta, -alpha, ply + 1, qDepth - 1)
+        if searchTimedOut then
+            return 0
+        end
         if score > bestScore then
             bestScore = score
         end
@@ -595,6 +605,9 @@ end
 
 local function search(state, depth, alpha, beta, ply)
     checkSearchTime()
+    if searchTimedOut then
+        return 0, {}
+    end
     if depth <= 0 then
         return quiescence(state, alpha, beta, ply, 5), {}
     end
@@ -632,9 +645,46 @@ local function search(state, depth, alpha, beta, ply)
     local bestScore = -INF
     local bestMove = nil
     local bestLine = {}
-    for _, move in ipairs(moves) do
+    local nodeInCheck = isInCheck(state, state.whiteToMove)
+    for moveIndex, move in ipairs(moves) do
         local child = applyMove(state, move)
-        local childScore, childLine = search(child, depth - 1, -beta, -alpha, ply + 1)
+        local childScore, childLine
+        if moveIndex == 1 then
+            childScore, childLine = search(child, depth - 1, -beta, -alpha, ply + 1)
+            if searchTimedOut then
+                return 0, {}
+            end
+        else
+            local target = state.board[move.ty][move.tx]
+            local movingPiece = math.abs(state.board[move.fy][move.fx])
+            local quiet = target == EMPTY and not move.enPassant and not move.promotion
+            local reduction = 0
+            if depth >= 3 and moveIndex >= 4 and quiet and not nodeInCheck and movingPiece ~= KING then
+                local givesCheck = isInCheck(child, child.whiteToMove)
+                local nearPromotion = movingPiece == PAWN and (move.ty == 7 or move.ty == 2)
+                if not givesCheck and not nearPromotion then
+                    reduction = depth >= 6 and moveIndex >= 10 and 2 or 1
+                end
+            end
+            childScore, childLine = search(child, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1)
+            if searchTimedOut then
+                return 0, {}
+            end
+            local probeScore = -childScore
+            if reduction > 0 and probeScore > alpha then
+                childScore, childLine = search(child, depth - 1, -alpha - 1, -alpha, ply + 1)
+                if searchTimedOut then
+                    return 0, {}
+                end
+                probeScore = -childScore
+            end
+            if probeScore > alpha and probeScore < beta then
+                childScore, childLine = search(child, depth - 1, -beta, -alpha, ply + 1)
+                if searchTimedOut then
+                    return 0, {}
+                end
+            end
+        end
         local score = -childScore
         if score > bestScore then
             bestScore = score
@@ -716,7 +766,8 @@ local function transpositionPV(state, maxDepth)
     return line
 end
 
-local function bestLineFor(state)
+local function bestLineFor(state, generation)
+    activeSearchGeneration = generation or analysisGeneration
     local available = legalMoves(state, state.whiteToMove)
     if #available == 0 then
         return {}, 0, 0, 0, 0
@@ -732,28 +783,31 @@ local function bestLineFor(state)
     local bestLine = {available[1]}
     local bestScore = 0
     local bestDepth = 0
-    searchDeadline = os.clock() + 2.4
+    searchDeadline = os.clock() + 8.0
     searchNodes = 0
-    for depth = 1, 8 do
+    searchTimedOut = false
+    for depth = 1, 12 do
         local alpha, beta = -INF, INF
         if depth >= 3 and bestDepth > 0 then
             alpha = bestScore - 60
             beta = bestScore + 60
         end
-        local ok, score, line = pcall(function()
-            return search(state, depth, alpha, beta, 0)
-        end)
-        if ok and alpha > -INF and (score <= alpha or score >= beta) then
-            ok, score, line = pcall(function()
-                return search(state, depth, -INF, INF, 0)
-            end)
+        local score, line = search(state, depth, alpha, beta, 0)
+        if searchTimedOut then
+            break
         end
-        if ok and line and line[1] then
+        if alpha > -INF and (score <= alpha or score >= beta) then
+            score, line = search(state, depth, -INF, INF, 0)
+            if searchTimedOut then
+                break
+            end
+        end
+        if line and line[1] then
             bestScore = score
             local principal = transpositionPV(state, depth)
             bestLine = #principal > 0 and principal or line
             bestDepth = depth
-        elseif not ok then
+        else
             break
         end
     end
@@ -1367,11 +1421,15 @@ end
 
 local requestHint
 requestHint = function()
+    analysisGeneration = analysisGeneration + 1
+    local requestGeneration = analysisGeneration
     if not acceptedBoard then
+        calculating = false
         moveLabel.Text = "รออ่านกระดานจริง..."
         return
     end
     if currentTurn ~= playerSide then
+        calculating = false
         moveLabel.Text = "ตอนนี้เป็นตาของอีกฝั่ง\nกดปุ่ม ตา เพื่อปรับถ้าระบบอ่านเทิร์นไม่ตรง"
         clearHighlights()
         refreshPanel()
@@ -1388,11 +1446,19 @@ requestHint = function()
     moveLabel.Text = "กำลังค้นหาหมากที่ดีที่สุด..."
     task.spawn(function()
         local searchedSignature = acceptedSignature
-        local line, score, depth, nodes, hits = bestLineFor(state)
-        calculating = false
-        if searchedSignature ~= acceptedSignature then
+        while searchRunning and requestGeneration == analysisGeneration do
+            task.wait(0.05)
+        end
+        if requestGeneration ~= analysisGeneration then
             return
         end
+        searchRunning = true
+        local line, score, depth, nodes, hits = bestLineFor(state, requestGeneration)
+        searchRunning = false
+        if requestGeneration ~= analysisGeneration or searchedSignature ~= acceptedSignature then
+            return
+        end
+        calculating = false
         analysisDepth = depth or 0
         analysisNodes = nodes or 0
         analysisHits = hits or 0
@@ -1427,6 +1493,8 @@ local function installSnapshot(board, signature, tileMap, mappedCount)
     if signature == acceptedSignature then
         return
     end
+    analysisGeneration = analysisGeneration + 1
+    calculating = false
     local previousBoard = acceptedBoard
     if previousBoard and not suppressNextToggle then
         updateCastling(previousBoard, board, currentRights)
@@ -1509,6 +1577,8 @@ sideButton.Activated:Connect(function()
     requestHint()
 end)
 swapButton.Activated:Connect(function()
+    analysisGeneration = analysisGeneration + 1
+    calculating = false
     invertPieceColors = not invertPieceColors
     suppressNextToggle = true
     acceptedBoard = nil
