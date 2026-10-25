@@ -1,0 +1,1988 @@
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
+local lp = Players.LocalPlayer
+local pg = lp:WaitForChild("PlayerGui")
+
+local env = (getgenv and getgenv()) or _G
+env.__TreadMenuToken = (env.__TreadMenuToken or 0) + 1
+local TOKEN = env.__TreadMenuToken
+local function alive()
+    return env.__TreadMenuToken == TOKEN
+end
+
+local old = pg:FindFirstChild("ThaiTreadMenu")
+if old then
+    old:Destroy()
+end
+
+-- ============ บันทึก ============
+local logLines = {}
+local logHook = nil
+local function log(text)
+    table.insert(logLines, os.date("%H:%M:%S") .. "  " .. tostring(text))
+    if #logLines > 60 then
+        table.remove(logLines, 1)
+    end
+    if logHook then
+        logHook(tostring(text))
+    end
+end
+
+local function short(v)
+    local s = tostring(v)
+    if #s > 42 then
+        s = string.sub(s, 1, 42) .. "…"
+    end
+    return s
+end
+
+local lastLog = {}
+local function logOnce(key, text)
+    if lastLog[key] ~= text then
+        lastLog[key] = text
+        log(text)
+    end
+end
+
+-- ============ โมดูลของเกม ============
+local function mod(...)
+    local cur = RS
+    for _, n in ipairs({...}) do
+        cur = cur and cur:FindFirstChild(n)
+    end
+    if cur and cur:IsA("ModuleScript") then
+        local ok, v = pcall(require, cur)
+        if ok then
+            return v
+        end
+    end
+    return nil
+end
+
+local R = mod("Shared", "Remotes")
+local Save = mod("Shared", "Save")
+local EggState = mod("Client", "EggState")
+local PlotState = mod("Client", "PlotState")
+local BaseUp = mod("Client", "BaseUpgrade")
+local AssetsData = mod("Data", "Assets")
+local AssetItems = mod("Shared", "Util", "AssetItems")
+local TreadData = mod("Data", "Treadmills")
+local BossData = mod("Data", "BossMastery")
+local RallyData = mod("Data", "RaceRally")
+local TreadClient = nil
+do
+    local c = RS:FindFirstChild("Controllers")
+    c = c and c:FindFirstChild("GUI")
+    c = c and c:FindFirstChild("TreadmillUpgradeController")
+    c = c and c:FindFirstChild("Client")
+    if c and c:IsA("ModuleScript") then
+        local ok, v = pcall(require, c)
+        if ok then
+            TreadClient = v
+        end
+    end
+end
+
+local net = nil
+do
+    local p = RS:FindFirstChild("Packages")
+    net = p and p:FindFirstChild("Networking")
+end
+
+-- รีโมตจากโมดูลเกม ถ้าไม่ได้ก็ไปหาตัวจริงใน Networking
+local function remObj(ns, name)
+    local o = R and R[ns] and R[ns][name]
+    if o then
+        return o
+    end
+    if net then
+        for _, pre in ipairs({"RF", "RE", "URE"}) do
+            local x = net:FindFirstChild(pre .. "/" .. ns .. "/" .. name)
+            if x then
+                return x
+            end
+        end
+    end
+    return nil
+end
+
+local function ask(ns, name, ...)
+    local o = remObj(ns, name)
+    if not o then
+        return table.pack(false, "ไม่เจอรีโมต " .. ns .. "." .. name)
+    end
+    return table.pack(pcall(function(...)
+        return o:InvokeServer(...)
+    end, ...))
+end
+
+local function send(ns, name, ...)
+    local o = remObj(ns, name)
+    if not o then
+        return false
+    end
+    local a = table.pack(...)
+    return pcall(function()
+        o:FireServer(table.unpack(a, 1, a.n))
+    end)
+end
+
+local function listenRemote(ns, name, fn)
+    local o = remObj(ns, name)
+    if o and o.OnClientEvent then
+        local ok, c = pcall(function()
+            return o.OnClientEvent:Connect(fn)
+        end)
+        if ok then
+            return c
+        end
+    end
+    return nil
+end
+
+-- ============ ข้อมูลผู้เล่น ============
+local function prof()
+    if not Save then
+        return nil
+    end
+    local ok, p = pcall(Save.Peek)
+    if ok and p then
+        return p
+    end
+    return nil
+end
+
+local function money()
+    local p = prof()
+    return p and tonumber(p.Money) or 0
+end
+
+local SUF = {"", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"}
+local function fmt(n)
+    n = tonumber(n) or 0
+    local i = 1
+    while n >= 1000 and i < #SUF do
+        n = n / 1000
+        i = i + 1
+    end
+    if i == 1 then
+        return string.format("%d", math.floor(n))
+    end
+    return string.format("%.2f%s", n, SUF[i])
+end
+
+local function hrp()
+    local c = lp.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function hum()
+    local c = lp.Character
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function tp(cf)
+    local h = hrp()
+    if h then
+        h.CFrame = cf
+        h.AssemblyLinearVelocity = Vector3.zero
+        return true
+    end
+    return false
+end
+
+-- ล็อกการเคลื่อนที่ ไม่ให้ฟังก์ชันอื่นดึงตัวกลับไปลู่วิ่งระหว่างทำงาน
+local moveLock = 0
+local function withMove(fn)
+    moveLock = moveLock + 1
+    local ok, err = pcall(fn)
+    moveLock = moveLock - 1
+    if not ok then
+        log("พลาด: " .. short(err))
+    end
+end
+
+local function waitUntil(cond, timeout)
+    local t0 = os.clock()
+    while os.clock() - t0 < (timeout or 3) do
+        local ok, v = pcall(cond)
+        if ok and v then
+            return true
+        end
+        task.wait(0.1)
+    end
+    return false
+end
+
+-- ============ กดปุ่มใน UI เกม ============
+local function press(btn)
+    if not btn then
+        return false
+    end
+    local did = false
+    for _, sigName in ipairs({"Activated", "MouseButton1Click", "MouseButton1Down", "MouseButton1Up"}) do
+        local sig = btn[sigName]
+        if getconnections then
+            pcall(function()
+                for _, c in ipairs(getconnections(sig)) do
+                    pcall(function()
+                        c:Fire()
+                    end)
+                    did = true
+                end
+            end)
+        elseif firesignal then
+            if pcall(firesignal, sig) then
+                did = true
+            end
+        end
+    end
+    return did
+end
+
+local function walk(root, ...)
+    local cur = root
+    for _, n in ipairs({...}) do
+        if not cur then
+            return nil
+        end
+        cur = cur:FindFirstChild(n)
+    end
+    return cur
+end
+
+local function setBox(box, text)
+    if not box then
+        return
+    end
+    box.Text = tostring(text)
+    pcall(function()
+        if firesignal then
+            firesignal(box.FocusLost, true)
+        end
+    end)
+end
+
+local function firePrompt(p)
+    if not p then
+        return false
+    end
+    if fireproximityprompt then
+        local ok = pcall(fireproximityprompt, p)
+        if ok then
+            return true
+        end
+    end
+    return false
+end
+-- ============ ตัวกำหนดฟังก์ชัน ============
+local settings = {
+    sellRarity = "",
+    sellKeep = 0,
+    promptRadius = 40,
+    area = "",
+    cmd = "",
+    asset = "",
+    walk = "",
+    power = "",
+    speed = 16,
+    jump = 50,
+    flySpeed = 60
+}
+
+local features = {}
+local byId = {}
+local function add(def)
+    def.next = 0
+    if def.kind == "toggle" and def.on == nil then
+        def.on = false
+    end
+    table.insert(features, def)
+    byId[def.id] = def
+    return def
+end
+
+local TAB_FARM, TAB_UP, TAB_FREE, TAB_EVENT, TAB_ADMIN, TAB_CHAR = 1, 2, 3, 4, 5, 6
+
+-- ลำดับความหายากของสัตว์
+local rarityRank, rarityNames = {}, {}
+if AssetsData and AssetsData.Directory then
+    for _, d in pairs(AssetsData.Directory) do
+        local r = d.Rarity
+        if r then
+            local n = r.DisplayName or r._id
+            if n and rarityRank[n] == nil then
+                rarityRank[n] = r.Rank or 0
+                table.insert(rarityNames, n)
+            end
+        end
+    end
+    table.sort(rarityNames, function(a, b)
+        return rarityRank[a] < rarityRank[b]
+    end)
+end
+if #rarityNames == 0 then
+    rarityNames = {"Common"}
+    rarityRank.Common = 0
+end
+settings.sellRarity = rarityNames[1]
+
+local function petInfo(enc)
+    if not AssetItems then
+        return nil
+    end
+    local ok, v = pcall(AssetItems.Decode, enc)
+    if ok and type(v) == "table" then
+        return v
+    end
+    return nil
+end
+
+local function rankOf(cat)
+    local d = AssetsData and AssetsData.Directory and AssetsData.Directory[cat]
+    local r = d and d.Rarity
+    return (r and r.Rank) or 0, d
+end
+
+-- ============ สถานะลู่วิ่ง ============
+local onTread = false
+listenRemote("Treadmill", "AssignedBeltShifted", function(id)
+    onTread = id ~= nil
+end)
+
+local function myPlot()
+    if not PlotState then
+        return nil
+    end
+    local ok, p = pcall(PlotState.ResolvePlot)
+    if ok then
+        return p
+    end
+    return nil
+end
+
+local function randomSpot(plot)
+    local a = plot.PetArea
+    local w = a.CFrame * CFrame.new((math.random() - 0.5) * a.Size.X * 0.8, a.Size.Y / 2, (math.random() - 0.5) * a.Size.Z * 0.8)
+    return plot.CenterPoint.CFrame:ToObjectSpace(CFrame.new(w.Position))
+end
+
+local function ownedEggs()
+    if not EggState then
+        return {}
+    end
+    local ok, t = pcall(EggState.ReadOwnerEggs, lp.UserId)
+    if ok and type(t) == "table" then
+        return t
+    end
+    return {}
+end
+
+local function countKeys(t)
+    local n = 0
+    for _ in pairs(t or {}) do
+        n = n + 1
+    end
+    return n
+end
+
+-- ============ แท็บ 1 : ฟาร์ม ============
+add({
+    id = "treadmill", tab = TAB_FARM, kind = "toggle", on = false, interval = 2,
+    name = "ยืนลู่วิ่งเก็บความเร็วตลอด",
+    desc = "พาตัวละครไปยืนบนลู่วิ่งของฐานเรา แล้วอยู่ตรงนั้น ความเร็วจะขึ้นเองทุกรอบ ถ้าหลุดจากลู่จะกลับขึ้นให้ใหม่",
+    fn = function()
+        if moveLock > 0 or onTread then
+            return
+        end
+        local plot = myPlot()
+        local h = hrp()
+        if not plot or not h then
+            return
+        end
+        local bottom = plot.PlotFolder:FindFirstChild("TreadmillBottom")
+        if not bottom then
+            return
+        end
+        local flat = Vector3.new(h.Position.X - bottom.Position.X, 0, h.Position.Z - bottom.Position.Z).Magnitude
+        if flat > 8 or math.abs(h.Position.Y - bottom.Position.Y) > 10 then
+            tp(bottom.CFrame * CFrame.new(0, bottom.Size.Y / 2 + 4, 0))
+        end
+        if waitUntil(function()
+            return onTread
+        end, 2.5) then
+            logOnce("tread", "ขึ้นลู่วิ่งแล้ว")
+            return
+        end
+        local t = ask("Treadmill", "AskWearStill")
+        if t[1] and t[2] == true then
+            logOnce("tread", "ขึ้นลู่วิ่งแล้ว")
+        else
+            logOnce("tread", "ขึ้นลู่ไม่สำเร็จ " .. short(t[3] or t[2]))
+        end
+    end
+})
+
+local plantBlock = 0
+local function plantAll()
+    if os.clock() < plantBlock or not EggState then
+        return 0
+    end
+    local plot = myPlot()
+    if not plot then
+        return 0
+    end
+    local n = 0
+    for uid, rec in pairs(ownedEggs()) do
+        if rec.Placement == nil then
+            local placed, why = false, nil
+            for _ = 1, 6 do
+                local ok, done, reason = pcall(EggState.PlantEgg, uid, randomSpot(plot))
+                if ok and done then
+                    placed = true
+                    break
+                end
+                why = reason or done
+                task.wait(0.15)
+            end
+            if placed then
+                n = n + 1
+            else
+                plantBlock = os.clock() + 25
+                logOnce("plant", "วางไข่ไม่ได้ " .. short(why))
+                break
+            end
+        end
+    end
+    if n > 0 then
+        log("วางไข่ลงฐาน " .. n .. " ฟอง")
+    end
+    return n
+end
+
+local function fieldPrompts(names)
+    local out = {}
+    for _, c in ipairs(workspace:GetChildren()) do
+        if c.Name == "SmartPromptPart" and c:IsA("BasePart") then
+            for _, p in ipairs(c:GetChildren()) do
+                if p:IsA("ProximityPrompt") and names[p.Name] and p.Enabled then
+                    table.insert(out, {part = c, prompt = p})
+                end
+            end
+        end
+    end
+    return out
+end
+
+local function nearest(list)
+    local h = hrp()
+    if not h then
+        return nil
+    end
+    local best, bd = nil, math.huge
+    for _, it in ipairs(list) do
+        local d = (it.part.Position - h.Position).Magnitude
+        if d < bd then
+            best, bd = it, d
+        end
+    end
+    return best
+end
+
+add({
+    id = "eggs", tab = TAB_FARM, kind = "toggle", on = false, interval = 4,
+    name = "เก็บไข่ในสนามแล้ววางลงฐาน",
+    desc = "วิ่งไปเก็บไข่ที่เกิดในโซนต่างๆ แล้วกลับมาวางลงในพื้นที่ฐานของเรา ไข่ที่ค้างในกระเป๋าก็วางให้ด้วย",
+    fn = function()
+        plantAll()
+        local list = fieldPrompts({CarryAreaEgg = true})
+        if #list == 0 then
+            return
+        end
+        withMove(function()
+            local before = countKeys(ownedEggs())
+            local taken = 0
+            for _ = 1, 3 do
+                local it = nearest(fieldPrompts({CarryAreaEgg = true}))
+                if not it then
+                    break
+                end
+                tp(it.part.CFrame * CFrame.new(0, 3, 0))
+                task.wait(0.35)
+                firePrompt(it.prompt)
+                if waitUntil(function()
+                    return countKeys(ownedEggs()) > before + taken
+                end, 2.5) then
+                    taken = taken + 1
+                end
+                local plot = myPlot()
+                if plot then
+                    tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
+                    task.wait(0.3)
+                    plantAll()
+                end
+                if os.clock() < plantBlock then
+                    break
+                end
+            end
+            if taken > 0 then
+                log("เก็บไข่จากสนาม " .. taken .. " ฟอง")
+            end
+        end)
+    end
+})
+
+add({
+    id = "hatch", tab = TAB_FARM, kind = "toggle", on = false, interval = 5,
+    name = "เปิดไข่ที่โตแล้วให้เอง",
+    desc = "ไข่ที่วางไว้ครบเวลาแล้วจะถูกเปิดทันที ได้สัตว์เลี้ยงเข้ากระเป๋าโดยไม่ต้องไปกดเอง",
+    fn = function()
+        if not EggState then
+            return
+        end
+        local ready = {}
+        for uid, rec in pairs(ownedEggs()) do
+            if rec.Placement then
+                local ok, r = pcall(EggState.IsReadyToHatch, uid)
+                if ok and r then
+                    table.insert(ready, uid)
+                end
+            end
+        end
+        if #ready == 0 then
+            return
+        end
+        withMove(function()
+            local plot = myPlot()
+            if plot then
+                tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
+                task.wait(0.4)
+            end
+            local got = 0
+            for _, uid in ipairs(ready) do
+                local ok, done, reason = pcall(EggState.BeginHatch, uid)
+                if ok and done then
+                    task.wait(3.2)
+                    local ok2, fin, why = pcall(EggState.FinishHatch, uid)
+                    if ok2 and fin then
+                        got = got + 1
+                    else
+                        logOnce("hatch", "เปิดไข่ไม่จบ " .. short(why))
+                    end
+                else
+                    logOnce("hatch", "เปิดไข่ไม่ได้ " .. short(reason or done))
+                end
+            end
+            if got > 0 then
+                log("เปิดไข่ได้สัตว์ " .. got .. " ตัว")
+            end
+        end)
+    end
+})
+
+add({
+    id = "wear", tab = TAB_FARM, kind = "toggle", on = false, interval = 20,
+    name = "ใส่สัตว์ที่ดีที่สุดให้เอง",
+    desc = "เลือกสัตว์ที่ทำเงินได้มากที่สุดมาใส่ในฐานเต็มจำนวนที่ใส่ได้ ตัวที่ดีกว่าจะมาแทนตัวเก่าให้เลย",
+    fn = function()
+        local t = ask("Haul", "WearBest")
+        if t[1] and t[2] == true then
+            logOnce("wear", "ใส่สัตว์ที่ดีที่สุดแล้ว")
+        else
+            logOnce("wear", "ใส่สัตว์ที่ดีที่สุดไม่ได้ " .. short(t[3] or t[2]))
+        end
+    end
+})
+
+add({
+    id = "sell", tab = TAB_FARM, kind = "toggle", on = false, interval = 25,
+    name = "ขายสัตว์ที่ไม่ใช้ให้เอง",
+    desc = "ขายสัตว์ในกระเป๋าที่ความหายากไม่เกินระดับที่เลือก ตัวที่ใส่อยู่และตัวที่ติดดาวไว้จะไม่ถูกขาย",
+    fn = function()
+        local p = prof()
+        if not p or not p.Inventory then
+            return
+        end
+        local equipped = {}
+        for _, u in ipairs(p.EquippedAssets or {}) do
+            equipped[u] = true
+        end
+        local limit = rarityRank[settings.sellRarity] or 0
+        local list = {}
+        for uid, enc in pairs(p.Inventory) do
+            if not equipped[uid] then
+                local info = petInfo(enc)
+                if info and info.IsFavorite ~= true and info.InFuse ~= true then
+                    local rank = rankOf(info.Category)
+                    if rank <= limit then
+                        table.insert(list, uid)
+                    end
+                end
+            end
+            if #list >= 400 then
+                break
+            end
+        end
+        if #list == 0 then
+            return
+        end
+        local before, bm = countKeys(p.Inventory), money()
+        withMove(function()
+            local stand = walk(workspace, "Stands", "Prompts", "SellAll")
+            if stand and stand:IsA("BasePart") then
+                tp(stand.CFrame * CFrame.new(0, 3, 0))
+                task.wait(0.4)
+            end
+            for i = 1, #list, 256 do
+                local part = {}
+                for j = i, math.min(i + 255, #list) do
+                    table.insert(part, list[j])
+                end
+                send("PetSatchel", "SellSelection", {Assets = part, Eggs = {}})
+                task.wait(0.3)
+            end
+        end)
+        if waitUntil(function()
+            local q = prof()
+            return q and (countKeys(q.Inventory) < before or money() > bm)
+        end, 3) then
+            local q = prof()
+            log("ขายสัตว์ไป " .. (before - countKeys(q and q.Inventory)) .. " ตัว  เงิน +" .. fmt(money() - bm))
+        else
+            logOnce("sell", "สั่งขายแล้วแต่ไม่มีอะไรเปลี่ยน")
+        end
+    end
+})
+add({
+    id = "sellRarity", tab = TAB_FARM, kind = "cycle", key = "sellRarity", options = rarityNames,
+    name = "ขายสัตว์ถึงระดับ",
+    desc = "กดเพื่อเลือกว่าจะขายสัตว์ที่หายากไม่เกินระดับไหน ตัวที่หายากกว่านี้จะเก็บไว้"
+})
+
+add({
+    id = "away", tab = TAB_FARM, kind = "toggle", on = false, interval = 30,
+    name = "เก็บเงินตอนไม่อยู่ให้เอง",
+    desc = "เงินที่สัตว์หามาให้ตอนเราออฟไลน์จะถูกเก็บเข้ากระเป๋าให้ทุกครั้งที่มี",
+    fn = function()
+        local s = ask("AwayEarnings", "FetchSummary")
+        local sum = s[1] and s[2]
+        if type(sum) ~= "table" or (tonumber(sum.ClaimableAmount) or 0) <= 0 then
+            return
+        end
+        local bm = money()
+        local t = ask("AwayEarnings", "AskCollect", {Kind = "Claim"})
+        if t[1] and t[2] then
+            waitUntil(function()
+                return money() > bm
+            end, 2)
+            log("เก็บเงินตอนไม่อยู่ +" .. fmt(money() - bm))
+        else
+            logOnce("away", "เก็บเงินตอนไม่อยู่ไม่ได้ " .. short(t[3] or t[2]))
+        end
+    end
+})
+
+add({
+    id = "farmnow", tab = TAB_FARM, kind = "button",
+    name = "ทำฟาร์มรอบนี้เดี๋ยวนี้",
+    desc = "สั่งให้ฟาร์มทุกตัวที่เปิดอยู่เริ่มทำงานทันทีโดยไม่ต้องรอรอบ",
+    fn = function()
+        for _, d in ipairs(features) do
+            if d.tab == TAB_FARM and d.kind == "toggle" and d.on then
+                d.next = 0
+            end
+        end
+        log("สั่งทำฟาร์มทันที")
+    end
+})
+
+-- ============ แท็บ 2 : อัปเกรด ============
+local function treadLevel()
+    local p = prof()
+    return p and p.TreadmillUpgradeLevel or 0
+end
+
+add({
+    id = "upTread", tab = TAB_UP, kind = "toggle", on = false, interval = 6,
+    name = "อัปเกรดลู่วิ่งให้เอง",
+    desc = "พอมีเงินพอก็ซื้อลู่วิ่งระดับถัดไปทันที ลู่ดีขึ้นความเร็วที่ได้ต่อรอบก็มากขึ้น",
+    fn = function()
+        local p = prof()
+        if not p then
+            return
+        end
+        local can = true
+        if TreadClient and TreadClient.CanAffordNext then
+            local ok, v = pcall(TreadClient.CanAffordNext, p)
+            can = ok and v
+        end
+        if not can then
+            return
+        end
+        local before = treadLevel()
+        if TreadClient and TreadClient.RequestCashUpgrade then
+            pcall(TreadClient.RequestCashUpgrade)
+        end
+        if not waitUntil(function()
+            return treadLevel() > before
+        end, 3) then
+            ask("Treadmill", "AskTierRaise")
+        end
+        if waitUntil(function()
+            return treadLevel() > before
+        end, 3) then
+            log("อัปเกรดลู่วิ่งเป็นเลเวล " .. treadLevel())
+        else
+            logOnce("upTread", "อัปเกรดลู่วิ่งไม่ผ่าน")
+        end
+    end
+})
+
+add({
+    id = "upBase", tab = TAB_UP, kind = "toggle", on = false, interval = 8,
+    name = "อัปเกรดฐานให้เอง",
+    desc = "ซื้อระดับฐานถัดไปเมื่อเงินพอ ฐานใหญ่ขึ้นวางไข่และใส่สัตว์ได้มากขึ้น",
+    fn = function()
+        local p = prof()
+        if not p then
+            return
+        end
+        local can = true
+        if BaseUp and BaseUp.IsNextTierAffordable then
+            local ok, v = pcall(BaseUp.IsNextTierAffordable, p)
+            can = ok and v
+        end
+        if not can then
+            return
+        end
+        local before = p.BaseUpgradeLevel or 0
+        if BaseUp and BaseUp.PurchaseNextTier then
+            pcall(BaseUp.PurchaseNextTier)
+        else
+            send("Homestead", "AskBaseTierRaise")
+        end
+        if not waitUntil(function()
+            local q = prof()
+            return q and (q.BaseUpgradeLevel or 0) > before
+        end, 4) then
+            send("Homestead", "AskBaseTierRaise")
+        end
+        if waitUntil(function()
+            local q = prof()
+            return q and (q.BaseUpgradeLevel or 0) > before
+        end, 4) then
+            log("อัปเกรดฐานเป็นเลเวล " .. tostring((prof() or {}).BaseUpgradeLevel))
+        else
+            logOnce("upBase", "อัปเกรดฐานไม่ผ่าน")
+        end
+    end
+})
+
+add({
+    id = "upTreadNow", tab = TAB_UP, kind = "button",
+    name = "ซื้อลู่วิ่งถัดไปเลย",
+    desc = "กดซื้ออัปเกรดลู่วิ่งหนึ่งขั้นตอนนี้ ถ้าเงินพอ",
+    fn = function()
+        local before = treadLevel()
+        if TreadClient and TreadClient.RequestCashUpgrade then
+            pcall(TreadClient.RequestCashUpgrade)
+        end
+        if not waitUntil(function()
+            return treadLevel() > before
+        end, 3) then
+            ask("Treadmill", "AskTierRaise")
+        end
+        if waitUntil(function()
+            return treadLevel() > before
+        end, 3) then
+            log("ลู่วิ่งเป็นเลเวล " .. treadLevel())
+        else
+            log("ซื้อลู่วิ่งไม่ได้ เงินอาจไม่พอ")
+        end
+    end
+})
+
+add({
+    id = "upBaseNow", tab = TAB_UP, kind = "button",
+    name = "ซื้อฐานระดับถัดไปเลย",
+    desc = "กดซื้ออัปเกรดฐานหนึ่งขั้นตอนนี้ ถ้าเงินพอ",
+    fn = function()
+        local before = (prof() or {}).BaseUpgradeLevel or 0
+        if BaseUp and BaseUp.PurchaseNextTier then
+            pcall(BaseUp.PurchaseNextTier)
+        else
+            send("Homestead", "AskBaseTierRaise")
+        end
+        if waitUntil(function()
+            return ((prof() or {}).BaseUpgradeLevel or 0) > before
+        end, 5) then
+            log("ฐานเป็นเลเวล " .. tostring((prof() or {}).BaseUpgradeLevel))
+        else
+            log("ซื้อฐานไม่ได้ เงินอาจไม่พอ")
+        end
+    end
+})
+
+-- ============ แท็บ 3 : รางวัลฟรี ============
+add({
+    id = "group", tab = TAB_FREE, kind = "toggle", on = false, interval = 60,
+    name = "รับรางวัลกลุ่มให้เอง",
+    desc = "รับรางวัลสำหรับสมาชิกกลุ่มของเกมหนึ่งครั้ง ต้องเป็นสมาชิกกลุ่มอยู่แล้วถึงจะรับได้",
+    fn = function()
+        local p = prof()
+        if not p or p.ClaimedGroupReward == true then
+            return
+        end
+        local t = ask("GroupPerk", "RedeemPerk", true)
+        if t[1] and t[2] then
+            log("รับรางวัลกลุ่มแล้ว")
+        else
+            logOnce("group", "รับรางวัลกลุ่มไม่ได้ " .. short(t[3] or t[2]))
+        end
+    end
+})
+
+add({
+    id = "codex", tab = TAB_FREE, kind = "toggle", on = false, interval = 45,
+    name = "รับรางวัลสมุดสะสมให้เอง",
+    desc = "ทุกครั้งที่สะสมสัตว์ครบตามเกณฑ์ในสมุด จะกดรับรางวัลทั้งหมดให้พร้อมกัน",
+    fn = function()
+        local t = ask("Codex", "AskRedeemAll")
+        if t[1] and t[2] then
+            logOnce("codex", "รับรางวัลสมุดสะสมแล้ว")
+        end
+    end
+})
+
+add({
+    id = "quest", tab = TAB_FREE, kind = "toggle", on = false, interval = 40,
+    name = "รับรางวัลเควสต์มือใหม่ให้เอง",
+    desc = "เควสต์ช่วงเริ่มเกมที่ทำเสร็จแล้วจะถูกกดรับรางวัลให้ทีละอัน",
+    fn = function()
+        local p = prof()
+        local q = p and p.OnboardingQuestline
+        if type(q) ~= "table" or type(q.Progress) ~= "table" then
+            return
+        end
+        for id in pairs(q.Progress) do
+            local cur = prof()
+            local c = cur and cur.OnboardingQuestline and cur.OnboardingQuestline.Claimed
+            if not (c and c[id]) then
+                local t = ask("OnboardingQuestline", "AskClaim", id)
+                if t[1] and t[2] then
+                    log("รับรางวัลเควสต์ " .. tostring(id))
+                end
+                task.wait(0.4)
+            end
+        end
+    end
+})
+
+add({
+    id = "boss", tab = TAB_FREE, kind = "toggle", on = false, interval = 50,
+    name = "รับรางวัลบอสมาสเตอรี่ให้เอง",
+    desc = "ฆ่าบอสสะสมแต้มถึงเป้าไหน ก็กดรับรางวัลของเป้านั้นให้ทันที",
+    fn = function()
+        local p = prof()
+        local bm = p and p.BossMastery
+        if not (BossData and bm and BossData.Milestones) then
+            return
+        end
+        for _, m in ipairs(BossData.Milestones) do
+            local need = 0
+            if BossData.GetMilestoneKills then
+                local ok, v = pcall(BossData.GetMilestoneKills, m)
+                need = ok and v or 0
+            end
+            local claimed = bm.ClaimedMilestoneIds and bm.ClaimedMilestoneIds[m.Id]
+            if not claimed and (tonumber(bm.Mastery) or 0) >= need then
+                local t = ask("BossMastery", "AskClaimMilestone", m.Id)
+                if t[1] and t[2] then
+                    log("รับรางวัลบอส " .. tostring(m.Id))
+                end
+                task.wait(0.4)
+            end
+        end
+    end
+})
+
+add({
+    id = "rally", tab = TAB_FREE, kind = "toggle", on = false, interval = 50,
+    name = "รับรางวัลแข่งรถให้เอง",
+    desc = "ชนะการแข่งสะสมถึงเป้าไหน ก็รับรางวัลของเป้านั้นให้ทันที",
+    fn = function()
+        local p = prof()
+        local rr = p and p.RaceRally
+        if not (RallyData and rr and type(RallyData.Milestones) == "table") then
+            return
+        end
+        for id, m in pairs(RallyData.Milestones) do
+            local claimed = rr.Milestones and rr.Milestones[id] == true
+            if not claimed and (tonumber(rr.Wins) or 0) >= (tonumber(m.Wins) or math.huge) then
+                local t = ask("RaceRally", "AskClaimMilestone", id)
+                if t[1] and t[2] then
+                    log("รับรางวัลแข่งรถ " .. tostring(id))
+                end
+                task.wait(0.4)
+            end
+        end
+    end
+})
+
+add({
+    id = "freeNow", tab = TAB_FREE, kind = "button",
+    name = "รับรางวัลฟรีทุกอย่างเดี๋ยวนี้",
+    desc = "สั่งให้ทุกตัวในหมวดนี้ทำงานทันทีหนึ่งรอบ",
+    fn = function()
+        for _, d in ipairs(features) do
+            if d.tab == TAB_FREE and d.kind == "toggle" then
+                d.next = 0
+                d.on = true
+                if d.paint then
+                    d.paint()
+                end
+            end
+        end
+        log("สั่งรับรางวัลฟรีทุกอย่างแล้ว")
+    end
+})
+
+-- ============ แท็บ 4 : กิจกรรม ============
+local areaNames = {}
+do
+    local world = workspace:FindFirstChild("World")
+    local areas = world and world:FindFirstChild("Areas")
+    if areas then
+        for _, a in ipairs(areas:GetChildren()) do
+            table.insert(areaNames, a.Name)
+        end
+        table.sort(areaNames)
+    end
+end
+if #areaNames == 0 then
+    areaNames = {"-"}
+end
+settings.area = areaNames[1]
+
+add({
+    id = "prompts", tab = TAB_EVENT, kind = "toggle", on = false, interval = 1.5,
+    name = "กดปุ่มโต้ตอบรอบตัวให้เอง",
+    desc = "กดปุ่มโต้ตอบ (E) ทุกอันที่อยู่ใกล้ตัวในระยะที่เลือก ใช้เก็บของกิจกรรมที่กระจายอยู่ ข้ามปุ่มซื้อของและส่งของขวัญ",
+    fn = function()
+        local h = hrp()
+        if not h then
+            return
+        end
+        local skip = {"robux", "buy", "purchase", "gift", "shop", "sell", "unplace", "wipe"}
+        local n = 0
+        for _, c in ipairs(workspace:GetChildren()) do
+            local parts = {c}
+            if c:IsA("Folder") or c:IsA("Model") then
+                parts = c:GetChildren()
+            end
+            for _, part in ipairs(parts) do
+                if part:IsA("BasePart") and (part.Position - h.Position).Magnitude <= settings.promptRadius then
+                    for _, p in ipairs(part:GetChildren()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled then
+                            local nm = (p.Name .. " " .. p.ActionText .. " " .. p.ObjectText):lower()
+                            local bad = false
+                            for _, s in ipairs(skip) do
+                                if nm:find(s, 1, true) then
+                                    bad = true
+                                    break
+                                end
+                            end
+                            if not bad and firePrompt(p) then
+                                n = n + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if n > 0 then
+            logOnce("prompts", "กดปุ่มโต้ตอบรอบตัว " .. n .. " อัน")
+        end
+    end
+})
+add({
+    id = "promptRadius", tab = TAB_EVENT, kind = "cycle", key = "promptRadius", options = {15, 25, 40, 70, 120}, suffix = " ช่วงตัว",
+    name = "ระยะกดปุ่มโต้ตอบ",
+    desc = "ปุ่มโต้ตอบที่อยู่ในระยะนี้เท่านั้นที่จะถูกกด กดเพื่อสลับระยะ"
+})
+
+add({
+    id = "halloweenEggs", tab = TAB_EVENT, kind = "toggle", on = false, interval = 3,
+    name = "เก็บไข่ฮาโลวีนในมิติผี",
+    desc = "วิ่งไปเก็บไข่ในมิติฮาโลวีนทีละฟอง แล้วกลับมาวางลงฐาน ใช้ได้เมื่อกิจกรรมฮาโลวีนเปิดอยู่",
+    fn = function()
+        local list = fieldPrompts({CarryHalloweenEgg = true})
+        local it = nearest(list)
+        if not it then
+            return
+        end
+        withMove(function()
+            tp(it.part.CFrame * CFrame.new(0, 3, 0))
+            task.wait(0.35)
+            firePrompt(it.prompt)
+            task.wait(1.2)
+            local plot = myPlot()
+            if plot then
+                tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
+                task.wait(0.3)
+                plantAll()
+            end
+        end)
+    end
+})
+
+add({
+    id = "area", tab = TAB_EVENT, kind = "cycle", key = "area", options = areaNames,
+    name = "เลือกโซนที่จะไป",
+    desc = "กดเพื่อสลับชื่อโซนในแมพ แล้วกดปุ่มด้านล่างเพื่อวาร์ปไป"
+})
+add({
+    id = "goArea", tab = TAB_EVENT, kind = "button",
+    name = "วาร์ปไปโซนที่เลือก",
+    desc = "พาตัวละครไปยังโซนที่เลือกไว้ด้านบน",
+    fn = function()
+        local world = workspace:FindFirstChild("World")
+        local areas = world and world:FindFirstChild("Areas")
+        local a = areas and areas:FindFirstChild(settings.area)
+        if not a then
+            log("ไม่เจอโซน " .. tostring(settings.area))
+            return
+        end
+        local ok, cf = pcall(function()
+            return a:GetPivot()
+        end)
+        if ok and tp(cf * CFrame.new(0, 6, 0)) then
+            log("วาร์ปไปโซน " .. settings.area)
+        else
+            log("วาร์ปไม่ได้")
+        end
+    end
+})
+add({
+    id = "goPlot", tab = TAB_EVENT, kind = "button",
+    name = "กลับไปที่ฐานของเรา",
+    desc = "พาตัวละครกลับไปที่ฐานของเราทันที",
+    fn = function()
+        local plot = myPlot()
+        if plot and tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0)) then
+            log("กลับถึงฐานแล้ว")
+        else
+            log("หาฐานไม่เจอ")
+        end
+    end
+})
+
+add({
+    id = "trainBoard", tab = TAB_EVENT, kind = "button",
+    name = "ขึ้นรถไฟกิจกรรม",
+    desc = "ขึ้นรถไฟของกิจกรรมผีเมื่อรถไฟมาจอดอยู่",
+    fn = function()
+        local t = ask("TrainEvent", "Action", "Board")
+        log("ขึ้นรถไฟ " .. ((t[1] and t[2]) and "สำเร็จ" or ("ไม่ได้ " .. short(t[3] or t[2]))))
+    end
+})
+add({
+    id = "trainReturn", tab = TAB_EVENT, kind = "button",
+    name = "ลงจากรถไฟกลับมาที่เดิม",
+    desc = "กลับจากรถไฟกิจกรรมมายังจุดเดิม",
+    fn = function()
+        local t = ask("TrainEvent", "Action", "Return")
+        log("ลงรถไฟ " .. ((t[1] and t[2]) and "สำเร็จ" or ("ไม่ได้ " .. short(t[3] or t[2]))))
+    end
+})
+add({
+    id = "trainStatus", tab = TAB_EVENT, kind = "button",
+    name = "ดูสถานะรถไฟกิจกรรม",
+    desc = "ถามเซิร์ฟเวอร์ว่ารถไฟกิจกรรมตอนนี้อยู่ในสถานะอะไร ผลขึ้นในหน้าบันทึก",
+    fn = function()
+        local t = ask("TrainEvent", "Action", "Status")
+        local v = t[2]
+        if type(v) == "table" then
+            local s = {}
+            for k, x in pairs(v) do
+                table.insert(s, tostring(k) .. "=" .. tostring(x))
+            end
+            log("รถไฟ: " .. table.concat(s, ", "))
+        else
+            log("รถไฟ: " .. tostring(v) .. " " .. tostring(t[3]))
+        end
+    end
+})
+
+add({
+    id = "liveEvents", tab = TAB_EVENT, kind = "button",
+    name = "ดูอีเวนต์ที่เปิดอยู่ตอนนี้",
+    desc = "ถามเซิร์ฟเวอร์ว่ามีอีเวนต์อะไรกำลังเปิดอยู่ ผลขึ้นในหน้าบันทึก",
+    fn = function()
+        local t = ask("LiveEvents", "FetchRunning")
+        local v = t[2]
+        local names = {}
+        if type(v) == "table" then
+            for k, x in pairs(v) do
+                table.insert(names, type(x) == "table" and tostring(x.Id or x.Name or k) or tostring(x))
+            end
+        end
+        log("อีเวนต์ที่เปิด: " .. (#names > 0 and table.concat(names, ", ") or "ไม่มี"))
+    end
+})
+
+-- ============ แท็บ 5 : แอดมิน ============
+local staffOK = nil
+listenRemote("StaffConsole", "StaffVerdict", function(v)
+    staffOK = v and true or false
+    log("สถานะแอดมินจากเซิร์ฟเวอร์: " .. (staffOK and "เป็นแอดมิน" or "ไม่ใช่แอดมิน"))
+end)
+listenRemote("StaffConsole", "GrantVerdict", function(ok, msg, uid)
+    log("ผลเสกของ: " .. tostring(ok) .. " " .. short(msg) .. (uid and uid ~= "" and (" " .. tostring(uid)) or ""))
+end)
+listenRemote("StaffConsole", "SpeedPowerVerdict", function(ok, msg)
+    log("ผลตั้งค่าความเร็ว: " .. tostring(ok) .. " " .. short(msg))
+end)
+
+local function bestAsset()
+    if not (AssetsData and AssetsData.Directory) then
+        return nil
+    end
+    local best, br, bw = nil, -1, 0
+    for id, d in pairs(AssetsData.Directory) do
+        local r = d.Rarity and d.Rarity.Rank or 0
+        local w = d.DropWeight or 0
+        if r > br or (r == br and w < bw) then
+            best, br, bw = id, r, w
+        end
+    end
+    return best
+end
+
+local function assetArg()
+    local a = settings.asset
+    if a == nil or a == "" then
+        a = bestAsset()
+    end
+    return a
+end
+
+add({
+    id = "probe", tab = TAB_ADMIN, kind = "button",
+    name = "เช็กว่าเราเป็นแอดมินไหม",
+    desc = "ถามเซิร์ฟเวอร์ว่าบัญชีนี้มีสิทธิ์แอดมินหรือเปล่า ถ้าไม่มีสิทธิ์ ฟังก์ชันแอดมินด้านล่างจะไม่มีผล",
+    fn = function()
+        send("StaffConsole", "ProbeStaffStatus")
+        task.wait(1.5)
+        if staffOK == nil then
+            log("เซิร์ฟเวอร์ยังไม่ตอบสถานะแอดมิน")
+        end
+    end
+})
+add({
+    id = "assetBox", tab = TAB_ADMIN, kind = "input", key = "asset", hint = "รหัสสัตว์ เช่น Dragon",
+    name = "เสกสัตว์ให้ตัวเอง",
+    desc = "พิมพ์รหัสสัตว์แล้วกดส่งเพื่อเสกเข้ากระเป๋า ถ้าไม่พิมพ์จะใช้ตัวที่หายากที่สุดในเกม",
+    fn = function()
+        local a = assetArg()
+        if not a then
+            log("ไม่มีรหัสสัตว์")
+            return
+        end
+        send("StaffConsole", "GrantSelfPet", {assetId = a, rideable = false, instantMount = false})
+        log("ส่งคำขอเสกสัตว์ " .. tostring(a))
+    end
+})
+add({
+    id = "grantEgg", tab = TAB_ADMIN, kind = "button",
+    name = "เสกไข่ให้ตัวเอง",
+    desc = "เสกไข่ของสัตว์ตามรหัสที่พิมพ์ไว้ในช่องด้านบน ถ้าว่างจะใช้ตัวที่หายากที่สุด",
+    fn = function()
+        local a = assetArg()
+        if not a then
+            log("ไม่มีรหัสสัตว์")
+            return
+        end
+        send("StaffConsole", "GrantSelfEgg", {assetId = a})
+        log("ส่งคำขอเสกไข่ " .. tostring(a))
+    end
+})
+add({
+    id = "walkBox", tab = TAB_ADMIN, kind = "input", key = "walk", hint = "ความเร็วเดิน เช่น 100",
+    name = "ตั้งความเร็วเดินจริง",
+    desc = "สั่งเซิร์ฟเวอร์ให้ตั้งความเร็วเดินของเราตามเลขที่พิมพ์ ต้องมีสิทธิ์แอดมินถึงจะได้ผล",
+    fn = function()
+        local n = tonumber(settings.walk)
+        if not n then
+            log("พิมพ์ตัวเลขก่อน")
+            return
+        end
+        send("StaffConsole", "WriteWalkSpeed", n)
+        log("ส่งคำขอตั้งความเร็วเดิน " .. n)
+    end
+})
+add({
+    id = "powerBox", tab = TAB_ADMIN, kind = "input", key = "power", hint = "ค่าสปีดสะสม เช่น 100000",
+    name = "ตั้งค่าสปีดสะสมจริง",
+    desc = "สั่งเซิร์ฟเวอร์ให้ตั้งค่าสปีดสะสม (ตัวเลขที่ลู่วิ่งเพิ่มให้) ตามเลขที่พิมพ์ ต้องมีสิทธิ์แอดมินถึงจะได้ผล",
+    fn = function()
+        local n = tonumber(settings.power)
+        if not n then
+            log("พิมพ์ตัวเลขก่อน")
+            return
+        end
+        send("StaffConsole", "WriteSpeedPower", n)
+        log("ส่งคำขอตั้งสปีดสะสม " .. n)
+    end
+})
+add({
+    id = "creatorCmd", tab = TAB_ADMIN, kind = "input", key = "cmd", hint = 'ชื่อคำสั่ง {"asset":"Dog"}',
+    name = "สั่งคำสั่งครีเอเตอร์",
+    desc = "ส่งคำสั่งแผงครีเอเตอร์ของเกม เช่น giveEgg พิมพ์ชื่อคำสั่งตามด้วยข้อมูลแบบ JSON ได้ ผลที่เซิร์ฟเวอร์ตอบขึ้นในหน้าบันทึก",
+    fn = function()
+        local folder = RS:FindFirstChild("ContentCreatorRemotes")
+        local rf = folder and folder:FindFirstChild("Request")
+        if not rf then
+            log("ไม่เจอรีโมตครีเอเตอร์")
+            return
+        end
+        local id, rest = tostring(settings.cmd):match("^%s*(%S+)%s*(.-)%s*$")
+        if not id or id == "" then
+            log("พิมพ์ชื่อคำสั่งก่อน")
+            return
+        end
+        local payload = {}
+        if rest and rest ~= "" then
+            local ok, v = pcall(HttpService.JSONDecode, HttpService, rest)
+            if ok and type(v) == "table" then
+                payload = v
+            end
+        end
+        local ok, res = pcall(function()
+            return rf:InvokeServer(id, payload)
+        end)
+        if ok and type(res) == "table" then
+            log("ครีเอเตอร์ " .. id .. ": " .. tostring(res.Ok) .. " " .. short(res.Message))
+        else
+            log("ครีเอเตอร์ " .. id .. ": " .. short(res))
+        end
+    end
+})
+add({
+    id = "openAdmin", tab = TAB_ADMIN, kind = "button",
+    name = "เปิดแผงแอดมินของเกม",
+    desc = "เปิดหรือปิดหน้าต่างแอดมินที่เกมมีให้ (ปุ่ม F9) ถ้าบัญชีไม่ใช่แอดมินหน้าต่างอาจไม่ขึ้น",
+    fn = function()
+        local g = pg:FindFirstChild("AdminPanel")
+        local panel = g and g:FindFirstChild("Panel")
+        if panel then
+            panel.Visible = not panel.Visible
+            log("แผงแอดมิน " .. (panel.Visible and "เปิด" or "ปิด"))
+        else
+            log("เกมยังไม่สร้างแผงแอดมินให้บัญชีนี้")
+        end
+    end
+})
+add({
+    id = "openCreator", tab = TAB_ADMIN, kind = "button",
+    name = "เปิดแผงครีเอเตอร์ของเกม",
+    desc = "กดปุ่มเปิดแผงคอนเทนต์ครีเอเตอร์ที่มีอยู่ในหน้าจอของเกม",
+    fn = function()
+        local g = pg:FindFirstChild("ContentCreatorsAdminPanel")
+        if not g then
+            log("ไม่เจอแผงครีเอเตอร์")
+            return
+        end
+        local l = g:FindFirstChild("Launcher")
+        local root = g:FindFirstChild("Root")
+        if l then
+            l.Visible = true
+            press(l)
+        end
+        if root then
+            root.Visible = true
+        end
+        log("เปิดแผงครีเอเตอร์แล้ว")
+    end
+})
+add({
+    id = "openCmdr", tab = TAB_ADMIN, kind = "button",
+    name = "เปิดหน้าต่างคำสั่ง Cmdr",
+    desc = "เปิดช่องพิมพ์คำสั่งของเกม (ปุ่ม F2) ใช้ได้เมื่อเซิร์ฟเวอร์ยืนยันว่าเป็นแอดมิน",
+    fn = function()
+        local c = RS:FindFirstChild("CmdrClient")
+        local m = c and c:IsA("ModuleScript") and select(2, pcall(require, c))
+        if type(m) == "table" and m.Show then
+            pcall(function()
+                m:Show()
+            end)
+            log("เปิด Cmdr แล้ว")
+        else
+            log("ไม่เจอ Cmdr")
+        end
+    end
+})
+
+-- ============ แท็บ 6 : ตัวละคร ============
+local conns = {}
+local function track(c)
+    table.insert(conns, c)
+    return c
+end
+
+add({
+    id = "afk", tab = TAB_CHAR, kind = "toggle", on = false, interval = 25,
+    name = "กันหลุดเกมตอนไม่ได้ขยับ",
+    desc = "ส่งสัญญาณว่ายังอยู่ในเกมทุกช่วง ไม่ให้ถูกเตะออกเพราะไม่ได้ทำอะไรนาน",
+    fn = function()
+        pcall(function()
+            local vu = game:GetService("VirtualUser")
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0, 0))
+        end)
+        send("Telemetry", "SubmitIdleState", false)
+        send("IdleRescue", "SubmitIdleFlag", false)
+    end
+})
+
+add({
+    id = "speedOn", tab = TAB_CHAR, kind = "toggle", on = false, interval = 0.25,
+    name = "ปรับความเร็ววิ่งฝั่งเรา",
+    desc = "ตั้งความเร็ววิ่งของตัวละครตามค่าที่เลือก เกมอาจดึงค่ากลับเป็นระยะ ถ้าต้องการให้ได้ผลจริงใช้ฟังก์ชันของแอดมิน",
+    fn = function()
+        local h = hum()
+        if h then
+            h.WalkSpeed = settings.speed
+        end
+    end
+})
+add({
+    id = "speedVal", tab = TAB_CHAR, kind = "cycle", key = "speed", options = {16, 32, 60, 100, 150, 250}, suffix = "",
+    name = "ค่าความเร็ววิ่ง",
+    desc = "กดเพื่อสลับค่าความเร็วที่จะใช้เมื่อเปิดสวิตช์ด้านบน"
+})
+add({
+    id = "jumpOn", tab = TAB_CHAR, kind = "toggle", on = false, interval = 0.25,
+    name = "ปรับแรงกระโดด",
+    desc = "ตั้งแรงกระโดดตามค่าที่เลือก",
+    fn = function()
+        local h = hum()
+        if h then
+            h.UseJumpPower = true
+            h.JumpPower = settings.jump
+        end
+    end
+})
+add({
+    id = "jumpVal", tab = TAB_CHAR, kind = "cycle", key = "jump", options = {50, 80, 120, 200, 350}, suffix = "",
+    name = "ค่าแรงกระโดด",
+    desc = "กดเพื่อสลับค่าแรงกระโดดที่จะใช้เมื่อเปิดสวิตช์ด้านบน"
+})
+
+local jumpConn = nil
+add({
+    id = "infJump", tab = TAB_CHAR, kind = "toggle", on = false,
+    name = "กระโดดซ้อนกลางอากาศ",
+    desc = "กดกระโดดซ้ำกลางอากาศได้ไม่จำกัด ระวัง: บนลู่วิ่ง การกระโดดจะทำให้หลุดจากลู่",
+    onChange = function(v)
+        if jumpConn then
+            jumpConn:Disconnect()
+            jumpConn = nil
+        end
+        if v then
+            jumpConn = UIS.JumpRequest:Connect(function()
+                local h = hum()
+                if h and not onTread then
+                    h:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end)
+        end
+    end
+})
+
+local noclipConn = nil
+add({
+    id = "noclip", tab = TAB_CHAR, kind = "toggle", on = false,
+    name = "ทะลุกำแพง",
+    desc = "ตัวละครเดินทะลุสิ่งกีดขวางได้ เหมาะกับตอนวิ่งไปเก็บของ",
+    onChange = function(v)
+        if noclipConn then
+            noclipConn:Disconnect()
+            noclipConn = nil
+        end
+        if v then
+            noclipConn = RunService.Stepped:Connect(function()
+                local c = lp.Character
+                if c then
+                    for _, p in ipairs(c:GetDescendants()) do
+                        if p:IsA("BasePart") and p.CanCollide then
+                            p.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        end
+    end
+})
+
+local flyBV, flyConn = nil, nil
+add({
+    id = "fly", tab = TAB_CHAR, kind = "toggle", on = false,
+    name = "บิน",
+    desc = "บินไปทุกทิศทางตามทิศที่กล้องมอง ใช้ปุ่มเดินปกติ ปิดสวิตช์เพื่อลงพื้น",
+    onChange = function(v)
+        if flyConn then
+            flyConn:Disconnect()
+            flyConn = nil
+        end
+        if flyBV then
+            flyBV:Destroy()
+            flyBV = nil
+        end
+        if v then
+            flyConn = RunService.RenderStepped:Connect(function()
+                local h, hu = hrp(), hum()
+                if not (h and hu) then
+                    return
+                end
+                if not flyBV or flyBV.Parent ~= h then
+                    if flyBV then
+                        flyBV:Destroy()
+                    end
+                    flyBV = Instance.new("BodyVelocity")
+                    flyBV.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                    flyBV.Parent = h
+                end
+                local cam = workspace.CurrentCamera
+                local dir = hu.MoveDirection
+                local look = cam.CFrame.LookVector
+                local move = Vector3.zero
+                if dir.Magnitude > 0 then
+                    local flat = Vector3.new(look.X, 0, look.Z)
+                    local fwd = flat.Magnitude > 0 and dir:Dot(flat.Unit) or 0
+                    move = dir + Vector3.new(0, look.Y * fwd, 0)
+                end
+                flyBV.Velocity = move * settings.flySpeed
+            end)
+        end
+    end
+})
+
+add({
+    id = "bright", tab = TAB_CHAR, kind = "toggle", on = false,
+    name = "สว่างทั้งแมพ",
+    desc = "เปิดไฟให้สว่างและเอาหมอกออก มองเห็นชัดแม้ตอนกลางคืน",
+    onChange = function(v)
+        if v then
+            Lighting.Brightness = 3
+            Lighting.ClockTime = 14
+            Lighting.FogEnd = 1e6
+            Lighting.GlobalShadows = false
+        else
+            Lighting.GlobalShadows = true
+        end
+    end
+})
+
+add({
+    id = "resetChar", tab = TAB_CHAR, kind = "button",
+    name = "รีเซ็ตตัวละคร",
+    desc = "ทำให้ตัวละครตายแล้วเกิดใหม่ที่ฐานของเรา",
+    fn = function()
+        local h = hum()
+        if h then
+            h.Health = 0
+        end
+    end
+})
+-- ============ หน้าตา ============
+local T = {
+    window = Color3.fromRGB(26, 26, 28),
+    panel = Color3.fromRGB(33, 33, 36),
+    panel2 = Color3.fromRGB(41, 41, 45),
+    line = Color3.fromRGB(58, 58, 64),
+    text = Color3.fromRGB(236, 236, 240),
+    muted = Color3.fromRGB(144, 144, 154),
+    orange = Color3.fromRGB(240, 150, 70),
+    orangeBg = Color3.fromRGB(56, 42, 30),
+    green = Color3.fromRGB(70, 205, 125),
+    red = Color3.fromRGB(255, 95, 87),
+    yellow = Color3.fromRGB(254, 188, 46),
+    dotGreen = Color3.fromRGB(40, 200, 64)
+}
+
+local function make(class, props, parent)
+    local inst = Instance.new(class)
+    for k, v in pairs(props) do
+        inst[k] = v
+    end
+    inst.Parent = parent
+    return inst
+end
+
+local function rounded(inst, r)
+    return make("UICorner", {CornerRadius = UDim.new(0, r)}, inst)
+end
+
+local function outlined(inst, color)
+    return make("UIStroke", {Color = color or T.line, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, inst)
+end
+
+local function label(parent, props)
+    local base = {
+        BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = T.text,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Text = ""
+    }
+    for k, v in pairs(props) do
+        base[k] = v
+    end
+    return make("TextLabel", base, parent)
+end
+
+local W, H = 680, 440
+local gui = make("ScreenGui", {
+    Name = "ThaiTreadMenu", ResetOnSpawn = false, IgnoreGuiInset = true,
+    DisplayOrder = 1000, ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+}, pg)
+
+local window = make("Frame", {
+    Name = "Window", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(W, H), BackgroundColor3 = T.window, BorderSizePixel = 0, Active = true, ClipsDescendants = true
+}, gui)
+rounded(window, 14)
+outlined(window)
+local scale = make("UIScale", {Scale = 1}, window)
+local openScale = 1
+
+local function fitScale()
+    local cam = workspace.CurrentCamera
+    if cam then
+        local v = cam.ViewportSize
+        openScale = math.clamp(math.min((v.X - 20) / W, (v.Y - 60) / H), 0.4, 1)
+    end
+end
+fitScale()
+scale.Scale = openScale
+local camConn = workspace.CurrentCamera and workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    fitScale()
+    if window.Visible then
+        scale.Scale = openScale
+    end
+end)
+
+-- แถบชื่อ
+local titleBar = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Active = true}, window)
+make("Frame", {Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = T.line, BorderSizePixel = 0}, titleBar)
+
+local function dot(x, color)
+    local b = make("TextButton", {Position = UDim2.fromOffset(x, 14), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = color, BorderSizePixel = 0, Text = "", AutoButtonColor = false}, titleBar)
+    rounded(b, 6)
+    return b
+end
+local closeDot = dot(16, T.red)
+local hideDot = dot(36, T.yellow)
+local homeDot = dot(56, T.dotGreen)
+
+label(titleBar, {
+    AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(300, 20),
+    Text = "เมนูแมพวิ่งสะสมสัตว์ ออโต้ทุกอย่าง", Font = Enum.Font.GothamMedium, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Center
+})
+
+local pill = make("Frame", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Size = UDim2.fromOffset(92, 24), BackgroundColor3 = T.panel2, BorderSizePixel = 0}, titleBar)
+rounded(pill, 7)
+outlined(pill)
+local pillDot = make("Frame", {Position = UDim2.fromOffset(10, 8), Size = UDim2.fromOffset(8, 8), BackgroundColor3 = T.green, BorderSizePixel = 0}, pill)
+rounded(pillDot, 4)
+local pillText = label(pill, {Position = UDim2.fromOffset(24, 0), Size = UDim2.new(1, -28, 1, 0), Text = "ทำงานอยู่", Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = T.green})
+
+local body = make("Frame", {Position = UDim2.fromOffset(0, 41), Size = UDim2.new(1, 0, 1, -41), BackgroundTransparency = 1}, window)
+
+-- ฝั่งซ้าย (หมวด)
+local left = make("Frame", {Size = UDim2.fromOffset(170, 329), BackgroundTransparency = 1}, body)
+make("Frame", {Position = UDim2.fromOffset(170, 10), Size = UDim2.fromOffset(1, 309), BackgroundColor3 = T.line, BorderSizePixel = 0}, body)
+label(left, {Position = UDim2.fromOffset(16, 10), Size = UDim2.fromOffset(140, 16), Text = "หมวดฟังก์ชัน", Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = T.muted})
+
+local TABS = {"ฟาร์มออโต้", "อัปเกรด", "รางวัลฟรี", "กิจกรรม", "แอดมิน", "ตัวละคร", "บันทึก"}
+local tabButtons = {}
+local currentTab = 1
+
+local tabList = make("Frame", {Position = UDim2.fromOffset(8, 32), Size = UDim2.fromOffset(154, 238), BackgroundTransparency = 1}, left)
+make("UIListLayout", {Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder}, tabList)
+
+local statCash = label(left, {Position = UDim2.fromOffset(16, 274), Size = UDim2.fromOffset(145, 16), Text = "เงิน  -", Font = Enum.Font.Code, TextSize = 12, TextColor3 = T.muted})
+local statReb = label(left, {Position = UDim2.fromOffset(16, 291), Size = UDim2.fromOffset(145, 16), Text = "ความเร็ว  -", Font = Enum.Font.Code, TextSize = 12, TextColor3 = T.muted})
+local statRod = label(left, {Position = UDim2.fromOffset(16, 308), Size = UDim2.fromOffset(145, 16), Text = "ลู่วิ่ง  -", Font = Enum.Font.Code, TextSize = 12, TextColor3 = T.muted, TextTruncate = Enum.TextTruncate.AtEnd})
+
+-- ฝั่งขวา (รายการ)
+local right = make("Frame", {Position = UDim2.fromOffset(171, 0), Size = UDim2.fromOffset(509, 329), BackgroundTransparency = 1}, body)
+local headLabel = label(right, {Position = UDim2.fromOffset(16, 6), Size = UDim2.fromOffset(300, 24), Text = "", Font = Enum.Font.GothamBold, TextSize = 14})
+local headCount = label(right, {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 6), Size = UDim2.fromOffset(160, 24), Text = "", Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.muted, TextXAlignment = Enum.TextXAlignment.Right})
+
+local scroller = make("ScrollingFrame", {
+    Position = UDim2.fromOffset(10, 34), Size = UDim2.fromOffset(489, 285), BackgroundTransparency = 1, BorderSizePixel = 0,
+    ScrollBarThickness = 4, ScrollBarImageColor3 = T.line, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y
+}, right)
+make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, scroller)
+make("UIPadding", {PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6)}, scroller)
+
+local logLabel = nil
+
+-- แถบล่าง
+local composer = make("Frame", {Position = UDim2.fromOffset(10, 331), Size = UDim2.fromOffset(W - 20, 58), BackgroundColor3 = T.panel, BorderSizePixel = 0}, body)
+rounded(composer, 12)
+outlined(composer)
+local statusLabel = label(composer, {Position = UDim2.fromOffset(14, 5), Size = UDim2.fromOffset(W - 60, 20), Text = "พร้อมแล้ว", TextColor3 = T.muted, TextTruncate = Enum.TextTruncate.AtEnd})
+
+local function chip(x, w, text)
+    local b = make("TextButton", {Position = UDim2.fromOffset(x, 27), Size = UDim2.fromOffset(w, 24), BackgroundColor3 = T.panel2, BorderSizePixel = 0, Text = text, TextSize = 12, TextColor3 = T.text, Font = Enum.Font.GothamMedium}, composer)
+    rounded(b, 8)
+    local s = outlined(b)
+    return b, s
+end
+local allOnChip, allOnStroke = chip(10, 130, "เปิดออโต้ทั้งหมด")
+local allOffChip = chip(148, 100, "ปิดทั้งหมด")
+local hintChip = chip(256, 150, "ซ่อนเมนู: แตะแถบล่างจอ")
+hintChip.AutoButtonColor = false
+hintChip.TextColor3 = T.muted
+
+local runBtn = make("TextButton", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = T.text, BorderSizePixel = 0, Text = "▶", TextSize = 15, TextColor3 = Color3.fromRGB(24, 24, 26), Font = Enum.Font.GothamBold}, composer)
+rounded(runBtn, 19)
+
+local statusCache
+logHook = function(text)
+    if statusCache ~= text then
+        statusCache = text
+        statusLabel.Text = text
+    end
+    if logLabel then
+        logLabel.Text = table.concat(logLines, "\n")
+    end
+end
+
+-- แถวฟังก์ชัน
+local rowsByTab = {}
+for i = 1, #TABS do
+    rowsByTab[i] = {}
+end
+
+local function runFeature(def)
+    if def.busy then
+        return
+    end
+    def.busy = true
+    task.spawn(function()
+        local ok, err = pcall(def.fn)
+        if not ok then
+            log(def.name .. " : " .. short(err))
+        end
+        def.busy = false
+    end)
+end
+
+local function buildRow(def)
+    local row = make("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.panel2, BorderSizePixel = 0, Visible = false}, scroller)
+    rounded(row, 10)
+    make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder}, row)
+    local top = make("Frame", {Size = UDim2.new(1, 0, 0, 44), BackgroundTransparency = 1, LayoutOrder = 1}, row)
+    local nameBox = make("Frame", {Position = UDim2.fromOffset(14, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, BackgroundTransparency = 1}, top)
+    make("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, nameBox)
+    label(nameBox, {Size = UDim2.new(0, 0, 0, 20), AutomaticSize = Enum.AutomaticSize.X, Text = def.name, Font = Enum.Font.GothamMedium, TextSize = 14, LayoutOrder = 1})
+    local q = make("TextButton", {Size = UDim2.fromOffset(20, 20), BackgroundColor3 = T.panel, BorderSizePixel = 0, Text = "?", TextSize = 12, TextColor3 = T.muted, Font = Enum.Font.GothamBold, LayoutOrder = 2}, nameBox)
+    rounded(q, 10)
+    outlined(q)
+
+    local desc = label(row, {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = def.desc or "", TextWrapped = true, TextSize = 12, TextColor3 = T.muted, LayoutOrder = 2, Visible = false})
+    make("UIPadding", {PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), PaddingBottom = UDim.new(0, 10)}, desc)
+    q.Activated:Connect(function()
+        desc.Visible = not desc.Visible
+        q.TextColor3 = desc.Visible and T.orange or T.muted
+        if desc.Visible then
+            desc.TextTransparency = 1
+            TweenService:Create(desc, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+        end
+    end)
+
+    if def.kind == "toggle" then
+        local sw = make("TextButton", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Size = UDim2.fromOffset(44, 24), Text = "", AutoButtonColor = false, BackgroundColor3 = T.line, BorderSizePixel = 0}, top)
+        rounded(sw, 12)
+        local knob = make("Frame", {Size = UDim2.fromOffset(18, 18), Position = UDim2.fromOffset(3, 3), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0}, sw)
+        rounded(knob, 9)
+        local function paint()
+            TweenService:Create(knob, TweenInfo.new(0.15), {Position = def.on and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3)}):Play()
+            TweenService:Create(sw, TweenInfo.new(0.15), {BackgroundColor3 = def.on and T.orange or T.line}):Play()
+        end
+        def.setOn = function(v, silent)
+            if def.on == v then
+                paint()
+                return
+            end
+            def.on = v
+            def.next = 0
+            paint()
+            if def.onChange then
+                task.spawn(function()
+                    pcall(def.onChange, v)
+                end)
+            end
+            if not silent then
+                log(def.name .. (v and " เปิดแล้ว" or " ปิดแล้ว"))
+            end
+        end
+        sw.Activated:Connect(function()
+            def.setOn(not def.on)
+        end)
+        def.paint = paint
+        paint()
+    elseif def.kind == "button" then
+        local b = make("TextButton", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Size = UDim2.fromOffset(64, 28), BackgroundColor3 = T.orangeBg, BorderSizePixel = 0, Text = "กดเลย", TextSize = 12, TextColor3 = T.orange, Font = Enum.Font.GothamBold}, top)
+        rounded(b, 8)
+        outlined(b, T.orange)
+        b.Activated:Connect(function()
+            runFeature(def)
+        end)
+    elseif def.kind == "cycle" then
+        local function text()
+            return tostring(settings[def.key]) .. (def.suffix or "")
+        end
+        local b = make("TextButton", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Size = UDim2.fromOffset(92, 28), BackgroundColor3 = T.panel, BorderSizePixel = 0, Text = text(), TextSize = 12, TextColor3 = T.text, Font = Enum.Font.GothamMedium}, top)
+        rounded(b, 8)
+        outlined(b)
+        b.Activated:Connect(function()
+            local idx = 1
+            for i, v in ipairs(def.options) do
+                if v == settings[def.key] then
+                    idx = i
+                end
+            end
+            settings[def.key] = def.options[idx % #def.options + 1]
+            b.Text = text()
+        end)
+    elseif def.kind == "input" then
+        local box = make("TextBox", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -90, 0.5, 0), Size = UDim2.fromOffset(150, 28), BackgroundColor3 = T.panel, BorderSizePixel = 0, Text = "", PlaceholderText = def.hint or "", PlaceholderColor3 = T.muted, TextSize = 12, TextColor3 = T.text, Font = Enum.Font.Gotham, ClearTextOnFocus = false}, top)
+        rounded(box, 8)
+        outlined(box)
+        box:GetPropertyChangedSignal("Text"):Connect(function()
+            settings[def.key] = box.Text
+        end)
+        local b = make("TextButton", {AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0), Size = UDim2.fromOffset(64, 28), BackgroundColor3 = T.orangeBg, BorderSizePixel = 0, Text = "ส่ง", TextSize = 12, TextColor3 = T.orange, Font = Enum.Font.GothamBold}, top)
+        rounded(b, 8)
+        outlined(b, T.orange)
+        b.Activated:Connect(function()
+            settings[def.key] = box.Text
+            runFeature(def)
+        end)
+    end
+    def.row = row
+    return row
+end
+
+for _, def in ipairs(features) do
+    buildRow(def)
+    table.insert(rowsByTab[def.tab], def)
+end
+
+-- หน้าบันทึก
+local logRow = make("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.panel2, BorderSizePixel = 0, Visible = false}, scroller)
+rounded(logRow, 10)
+logLabel = label(logRow, {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "ยังไม่มีอะไร", TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.muted})
+make("UIPadding", {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10)}, logLabel)
+
+local function showTab(i)
+    currentTab = i
+    for idx, b in ipairs(tabButtons) do
+        local active = idx == i
+        b.BackgroundColor3 = active and T.panel2 or T.window
+        b.TextColor3 = active and T.orange or T.muted
+    end
+    for _, def in ipairs(features) do
+        def.row.Visible = def.tab == i
+    end
+    logRow.Visible = i == #TABS
+    headLabel.Text = TABS[i]
+    local n = 0
+    for _, d in ipairs(rowsByTab[i] or {}) do
+        if d.kind == "toggle" and d.on then
+            n = n + 1
+        end
+    end
+    headCount.Text = (i == #TABS) and (#logLines .. " รายการ") or (#(rowsByTab[i] or {}) .. " ฟังก์ชัน")
+    scroller.CanvasPosition = Vector2.new(0, 0)
+    if i == #TABS then
+        logLabel.Text = #logLines > 0 and table.concat(logLines, "\n") or "ยังไม่มีอะไร"
+    end
+end
+
+for i, name in ipairs(TABS) do
+    local b = make("TextButton", {Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = T.window, BorderSizePixel = 0, Text = "   " .. name, TextSize = 13, TextColor3 = T.muted, Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = i, AutoButtonColor = false}, tabList)
+    rounded(b, 8)
+    b.Activated:Connect(function()
+        showTab(i)
+    end)
+    tabButtons[i] = b
+end
+
+-- ปุ่มควบคุม
+allOnChip.Activated:Connect(function()
+    for _, d in ipairs(features) do
+        if d.kind == "toggle" and d.tab <= 4 and d.setOn then
+            d.setOn(true, true)
+        end
+    end
+    log("เปิดออโต้ทั้งหมดแล้ว")
+end)
+allOffChip.Activated:Connect(function()
+    for _, d in ipairs(features) do
+        if d.kind == "toggle" and d.setOn then
+            d.setOn(false, true)
+        end
+    end
+    log("ปิดทุกอย่างแล้ว")
+end)
+runBtn.Activated:Connect(function()
+    for _, d in ipairs(features) do
+        if d.kind == "toggle" and d.on then
+            d.next = 0
+        end
+    end
+    log("สั่งรันรอบใหม่ให้ทุกตัวที่เปิดอยู่")
+end)
+
+-- เปิดปิดเมนู
+local menuOpen = true
+local function setMenu(v)
+    menuOpen = v
+    if v then
+        window.Visible = true
+        scale.Scale = openScale * 0.9
+        TweenService:Create(scale, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = openScale}):Play()
+    else
+        local t = TweenService:Create(scale, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = openScale * 0.9})
+        t:Play()
+        task.delay(0.14, function()
+            if not menuOpen and window.Parent then
+                window.Visible = false
+            end
+        end)
+    end
+end
+
+closeDot.Activated:Connect(function()
+    setMenu(false)
+end)
+hideDot.Activated:Connect(function()
+    setMenu(false)
+end)
+homeDot.Activated:Connect(function()
+    window.Position = UDim2.fromScale(0.5, 0.5)
+    fitScale()
+    scale.Scale = openScale
+end)
+
+-- แถบกดข้างล่างสุดตรงกลางจอ
+local barHit = make("TextButton", {
+    Name = "ToggleBar", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -2), Size = UDim2.fromOffset(170, 26),
+    BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 50
+}, gui)
+local barLine = make("Frame", {AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -5), Size = UDim2.fromOffset(110, 6), BackgroundColor3 = Color3.fromRGB(235, 235, 240), BackgroundTransparency = 0.35, BorderSizePixel = 0, ZIndex = 51}, barHit)
+rounded(barLine, 3)
+barHit.Activated:Connect(function()
+    setMenu(not menuOpen)
+    TweenService:Create(barLine, TweenInfo.new(0.1), {BackgroundTransparency = 0}):Play()
+    task.delay(0.15, function()
+        TweenService:Create(barLine, TweenInfo.new(0.2), {BackgroundTransparency = 0.35}):Play()
+    end)
+end)
+
+local keyConn = UIS.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.RightShift then
+        setMenu(not menuOpen)
+    end
+end)
+
+-- ลากหน้าต่าง
+local dragging, dragStart, startPos = false, nil, nil
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.Position.X - titleBar.AbsolutePosition.X > 80 * scale.Scale and input.Position.X - titleBar.AbsolutePosition.X < titleBar.AbsoluteSize.X - 110 * scale.Scale then
+            dragging = true
+            dragStart = input.Position
+            startPos = window.Position
+        end
+    end
+end)
+local moveConn = UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local d = input.Position - dragStart
+        window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    end
+end)
+local endConn = UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+gui.Destroying:Connect(function()
+    for _, c in ipairs({camConn, keyConn, moveConn, endConn, noclipConn, jumpConn, flyConn}) do
+        if c then
+            pcall(function()
+                c:Disconnect()
+            end)
+        end
+    end
+    env.__TreadMenuToken = (env.__TreadMenuToken or 0) + 1
+end)
+
+-- ============ ลูปหลัก ============
+for _, def in ipairs(features) do
+    if def.kind == "toggle" and def.on and def.onChange then
+        task.spawn(function()
+            pcall(def.onChange, true)
+        end)
+    end
+end
+
+task.spawn(function()
+    while alive() and gui.Parent do
+        local now = os.clock()
+        for _, def in ipairs(features) do
+            if def.kind == "toggle" and def.on and def.fn and now >= def.next then
+                def.next = now + (def.interval or 3)
+                runFeature(def)
+            end
+        end
+        task.wait(0.05)
+    end
+end)
+
+task.spawn(function()
+    while alive() and gui.Parent do
+        statCash.Text = "เงิน  " .. fmt(money())
+        local sp = lp:FindFirstChild("leaderstats")
+        sp = sp and sp:FindFirstChild("Speed")
+        statReb.Text = "ความเร็ว  " .. fmt(sp and sp.Value or 0)
+        local pf = prof()
+        statRod.Text = "ลู่วิ่ง  เลเวล " .. tostring(pf and pf.TreadmillUpgradeLevel or "-")
+        local active = 0
+        for _, d in ipairs(features) do
+            if d.kind == "toggle" and d.on then
+                active = active + 1
+            end
+        end
+        pillText.Text = active .. " ตัวทำงาน"
+        pillDot.BackgroundColor3 = active > 0 and T.green or T.muted
+        pillText.TextColor3 = active > 0 and T.green or T.muted
+        task.wait(1)
+    end
+end)
+
+showTab(1)
+log("โหลดเสร็จ ทุกฟังก์ชันปิดอยู่ เปิดเองได้เลย")
+if not (Save and EggState and PlotState) then
+    log("โมดูลเกมบางตัวโหลดไม่ได้ ฟังก์ชันที่ใช้มันจะไม่ทำงาน")
+end
