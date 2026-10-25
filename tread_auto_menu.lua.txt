@@ -20,7 +20,6 @@ if old then
     old:Destroy()
 end
 
--- ============ บันทึก ============
 local logLines = {}
 local logHook = nil
 local function log(text)
@@ -49,7 +48,6 @@ local function logOnce(key, text)
     end
 end
 
--- ============ โมดูลของเกม ============
 local function mod(...)
     local cur = RS
     for _, n in ipairs({...}) do
@@ -94,7 +92,6 @@ do
     net = p and p:FindFirstChild("Networking")
 end
 
--- รีโมตจากโมดูลเกม ถ้าไม่ได้ก็ไปหาตัวจริงใน Networking
 local function remObj(ns, name)
     local o = R and R[ns] and R[ns][name]
     if o then
@@ -145,7 +142,6 @@ local function listenRemote(ns, name, fn)
     return nil
 end
 
--- ============ ข้อมูลผู้เล่น ============
 local function prof()
     if not Save then
         return nil
@@ -196,7 +192,6 @@ local function tp(cf)
     return false
 end
 
--- ล็อกการเคลื่อนที่ ไม่ให้ฟังก์ชันอื่นดึงตัวกลับไปลู่วิ่งระหว่างทำงาน
 local moveLock = 0
 local function withMove(fn)
     moveLock = moveLock + 1
@@ -219,7 +214,6 @@ local function waitUntil(cond, timeout)
     return false
 end
 
--- ============ กดปุ่มใน UI เกม ============
 local function press(btn)
     if not btn then
         return false
@@ -280,7 +274,6 @@ local function firePrompt(p)
     end
     return false
 end
--- ============ ตัวกำหนดฟังก์ชัน ============
 local settings = {
     sellRarity = "",
     sellKeep = 0,
@@ -309,7 +302,6 @@ end
 
 local TAB_FARM, TAB_UP, TAB_FREE, TAB_EVENT, TAB_ADMIN, TAB_CHAR = 1, 2, 3, 4, 5, 6
 
--- ลำดับความหายากของสัตว์
 local rarityRank, rarityNames = {}, {}
 if AssetsData and AssetsData.Directory then
     for _, d in pairs(AssetsData.Directory) do
@@ -349,7 +341,53 @@ local function rankOf(cat)
     return (r and r.Rank) or 0, d
 end
 
--- ============ สถานะลู่วิ่ง ============
+local function goTo(cf, speed)
+    local h = hrp()
+    local c = lp.Character
+    if not (h and c) then
+        return false
+    end
+    speed = speed or 110
+    local target = cf.Position
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+    bv.Velocity = Vector3.zero
+    bv.Parent = h
+    local saved = {}
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("BasePart") and p.CanCollide then
+            saved[p] = true
+            p.CanCollide = false
+        end
+    end
+    local arrived = false
+    local t0 = os.clock()
+    while os.clock() - t0 < 30 and alive() do
+        h = hrp()
+        if not h then
+            break
+        end
+        local d = target - h.Position
+        if d.Magnitude < 3.5 then
+            arrived = true
+            break
+        end
+        bv.Velocity = d.Unit * math.min(speed, math.max(d.Magnitude * 6, 20))
+        task.wait()
+    end
+    bv:Destroy()
+    for p in pairs(saved) do
+        if p.Parent then
+            p.CanCollide = true
+        end
+    end
+    h = hrp()
+    if h then
+        h.AssemblyLinearVelocity = Vector3.zero
+    end
+    return arrived
+end
+
 local onTread = false
 listenRemote("Treadmill", "AssignedBeltShifted", function(id)
     onTread = id ~= nil
@@ -391,9 +429,10 @@ local function countKeys(t)
     return n
 end
 
--- ============ แท็บ 1 : ฟาร์ม ============
+add({id = "master", tab = TAB_FARM, kind = "toggle", on = false, name = "ออโต้ทั้งหมด (ปุ่มเดียว ไม่ต้องเปิดอย่างอื่น)", desc = "กดครั้งเดียวแล้วฟังก์ชันออโต้ทุกตัวทำงานเอง ทั้งเก็บไข่ เปิดไข่ ใส่สัตว์ เก็บเงิน อัปเกรด และรับรางวัล ไม่ต้องไปเปิดทีละอัน"})
+
 add({
-    id = "treadmill", tab = TAB_FARM, kind = "toggle", on = false, interval = 2,
+    id = "treadmill", auto = true, tab = TAB_FARM, kind = "toggle", on = false, interval = 2,
     name = "ยืนลู่วิ่งเก็บความเร็วตลอด",
     desc = "พาตัวละครไปยืนบนลู่วิ่งของฐานเรา แล้วอยู่ตรงนั้น ความเร็วจะขึ้นเองทุกรอบ ถ้าหลุดจากลู่จะกลับขึ้นให้ใหม่",
     fn = function()
@@ -411,7 +450,7 @@ add({
         end
         local flat = Vector3.new(h.Position.X - bottom.Position.X, 0, h.Position.Z - bottom.Position.Z).Magnitude
         if flat > 8 or math.abs(h.Position.Y - bottom.Position.Y) > 10 then
-            tp(bottom.CFrame * CFrame.new(0, bottom.Size.Y / 2 + 4, 0))
+            goTo(bottom.CFrame * CFrame.new(0, bottom.Size.Y / 2 + 4, 0), 90)
         end
         if waitUntil(function()
             return onTread
@@ -495,8 +534,8 @@ local function nearest(list)
 end
 
 add({
-    id = "eggs", tab = TAB_FARM, kind = "toggle", on = false, interval = 4,
-    name = "เก็บไข่ในสนามแล้ววางลงฐาน",
+    id = "eggs", auto = true, tab = TAB_FARM, kind = "toggle", on = false, interval = 4,
+    name = "บินเก็บไข่ออโต้ (เก็บแล้ววางลงฐาน)",
     desc = "วิ่งไปเก็บไข่ที่เกิดในโซนต่างๆ แล้วกลับมาวางลงในพื้นที่ฐานของเรา ไข่ที่ค้างในกระเป๋าก็วางให้ด้วย",
     fn = function()
         plantAll()
@@ -512,7 +551,7 @@ add({
                 if not it then
                     break
                 end
-                tp(it.part.CFrame * CFrame.new(0, 3, 0))
+                goTo(it.part.CFrame * CFrame.new(0, 3, 0))
                 task.wait(0.35)
                 firePrompt(it.prompt)
                 if waitUntil(function()
@@ -522,7 +561,7 @@ add({
                 end
                 local plot = myPlot()
                 if plot then
-                    tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
+                    goTo(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
                     task.wait(0.3)
                     plantAll()
                 end
@@ -538,7 +577,7 @@ add({
 })
 
 add({
-    id = "hatch", tab = TAB_FARM, kind = "toggle", on = false, interval = 5,
+    id = "hatch", auto = true, tab = TAB_FARM, kind = "toggle", on = false, interval = 5,
     name = "เปิดไข่ที่โตแล้วให้เอง",
     desc = "ไข่ที่วางไว้ครบเวลาแล้วจะถูกเปิดทันที ได้สัตว์เลี้ยงเข้ากระเป๋าโดยไม่ต้องไปกดเอง",
     fn = function()
@@ -560,7 +599,7 @@ add({
         withMove(function()
             local plot = myPlot()
             if plot then
-                tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
+                goTo(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
                 task.wait(0.4)
             end
             local got = 0
@@ -586,7 +625,7 @@ add({
 })
 
 add({
-    id = "wear", tab = TAB_FARM, kind = "toggle", on = false, interval = 20,
+    id = "wear", auto = true, tab = TAB_FARM, kind = "toggle", on = false, interval = 20,
     name = "ใส่สัตว์ที่ดีที่สุดให้เอง",
     desc = "เลือกสัตว์ที่ทำเงินได้มากที่สุดมาใส่ในฐานเต็มจำนวนที่ใส่ได้ ตัวที่ดีกว่าจะมาแทนตัวเก่าให้เลย",
     fn = function()
@@ -600,7 +639,7 @@ add({
 })
 
 add({
-    id = "sell", tab = TAB_FARM, kind = "toggle", on = false, interval = 25,
+    id = "sell", auto = true, tab = TAB_FARM, kind = "toggle", on = false, interval = 25,
     name = "ขายสัตว์ที่ไม่ใช้ให้เอง",
     desc = "ขายสัตว์ในกระเป๋าที่ความหายากไม่เกินระดับที่เลือก ตัวที่ใส่อยู่และตัวที่ติดดาวไว้จะไม่ถูกขาย",
     fn = function()
@@ -635,7 +674,7 @@ add({
         withMove(function()
             local stand = walk(workspace, "Stands", "Prompts", "SellAll")
             if stand and stand:IsA("BasePart") then
-                tp(stand.CFrame * CFrame.new(0, 3, 0))
+                goTo(stand.CFrame * CFrame.new(0, 3, 0))
                 task.wait(0.4)
             end
             for i = 1, #list, 256 do
@@ -665,7 +704,7 @@ add({
 })
 
 add({
-    id = "away", tab = TAB_FARM, kind = "toggle", on = false, interval = 30,
+    id = "away", auto = true, tab = TAB_FARM, kind = "toggle", on = false, interval = 30,
     name = "เก็บเงินตอนไม่อยู่ให้เอง",
     desc = "เงินที่สัตว์หามาให้ตอนเราออฟไลน์จะถูกเก็บเข้ากระเป๋าให้ทุกครั้งที่มี",
     fn = function()
@@ -701,14 +740,73 @@ add({
     end
 })
 
--- ============ แท็บ 2 : อัปเกรด ============
+add({
+    id = "wearNow", tab = TAB_FARM, kind = "button",
+    name = "ใส่สัตว์ที่ดีที่สุดเดี๋ยวนี้",
+    desc = "สั่งใส่สัตว์ที่ทำเงินได้มากที่สุดทันที ไม่ต้องรอรอบ",
+    fn = function()
+        local t = ask("Haul", "WearBest")
+        log("ใส่สัตว์ที่ดีที่สุด " .. ((t[1] and t[2] == true) and "สำเร็จ" or ("ไม่ได้ " .. short(t[3] or t[2]))))
+    end
+})
+add({
+    id = "sellNow", tab = TAB_FARM, kind = "button",
+    name = "ขายสัตว์ตามระดับที่เลือกเดี๋ยวนี้",
+    desc = "ขายสัตว์ตามระดับความหายากที่เลือกไว้ทันที ตัวที่ใส่อยู่และตัวที่ติดดาวจะไม่ถูกขาย",
+    fn = function()
+        byId.sell.fn()
+    end
+})
+add({
+    id = "awayNow", tab = TAB_FARM, kind = "button",
+    name = "เก็บเงินตอนไม่อยู่เดี๋ยวนี้",
+    desc = "เก็บเงินที่สัตว์หามาตอนเราไม่อยู่ทันที",
+    fn = function()
+        byId.away.fn()
+    end
+})
+add({
+    id = "slowToggle", tab = TAB_FARM, kind = "button",
+    name = "สลับโหมดช้าของลู่วิ่ง",
+    desc = "เปิดหรือปิดโหมดช้าของลู่วิ่ง",
+    fn = function()
+        local t = ask("Treadmill", "AskSlowToggle")
+        log("สลับโหมดช้า " .. ((t[1] and t[2]) and "สำเร็จ" or ("ไม่ได้ " .. short(t[3] or t[2]))))
+    end
+})
+add({
+    id = "doff", tab = TAB_FARM, kind = "button",
+    name = "ลงจากลู่วิ่ง",
+    desc = "ลงจากลู่วิ่งทันที ฟังก์ชันยืนลู่ที่เปิดอยู่จะพากลับขึ้นไปใหม่",
+    fn = function()
+        local t = ask("Treadmill", "AskDoff")
+        log("ลงจากลู่ " .. ((t[1] and t[2] == true) and "สำเร็จ" or "ไม่ได้"))
+    end
+})
+add({
+    id = "eggOnce", tab = TAB_FARM, kind = "button",
+    name = "บินเก็บไข่ในสนามรอบเดียวเดี๋ยวนี้",
+    desc = "บินไปเก็บไข่ใกล้สุดแล้ววางลงฐานทันที หนึ่งรอบ",
+    fn = function()
+        byId.eggs.fn()
+    end
+})
+add({
+    id = "hatchOnce", tab = TAB_FARM, kind = "button",
+    name = "เปิดไข่ที่โตแล้วเดี๋ยวนี้",
+    desc = "เปิดไข่ทุกฟองที่พร้อมแล้วทันที",
+    fn = function()
+        byId.hatch.fn()
+    end
+})
+
 local function treadLevel()
     local p = prof()
     return p and p.TreadmillUpgradeLevel or 0
 end
 
 add({
-    id = "upTread", tab = TAB_UP, kind = "toggle", on = false, interval = 6,
+    id = "upTread", auto = true, tab = TAB_UP, kind = "toggle", on = false, interval = 6,
     name = "อัปเกรดลู่วิ่งให้เอง",
     desc = "พอมีเงินพอก็ซื้อลู่วิ่งระดับถัดไปทันที ลู่ดีขึ้นความเร็วที่ได้ต่อรอบก็มากขึ้น",
     fn = function()
@@ -744,7 +842,7 @@ add({
 })
 
 add({
-    id = "upBase", tab = TAB_UP, kind = "toggle", on = false, interval = 8,
+    id = "upBase", auto = true, tab = TAB_UP, kind = "toggle", on = false, interval = 8,
     name = "อัปเกรดฐานให้เอง",
     desc = "ซื้อระดับฐานถัดไปเมื่อเงินพอ ฐานใหญ่ขึ้นวางไข่และใส่สัตว์ได้มากขึ้น",
     fn = function()
@@ -828,9 +926,8 @@ add({
     end
 })
 
--- ============ แท็บ 3 : รางวัลฟรี ============
 add({
-    id = "group", tab = TAB_FREE, kind = "toggle", on = false, interval = 60,
+    id = "group", auto = true, tab = TAB_FREE, kind = "toggle", on = false, interval = 60,
     name = "รับรางวัลกลุ่มให้เอง",
     desc = "รับรางวัลสำหรับสมาชิกกลุ่มของเกมหนึ่งครั้ง ต้องเป็นสมาชิกกลุ่มอยู่แล้วถึงจะรับได้",
     fn = function()
@@ -848,7 +945,7 @@ add({
 })
 
 add({
-    id = "codex", tab = TAB_FREE, kind = "toggle", on = false, interval = 45,
+    id = "codex", auto = true, tab = TAB_FREE, kind = "toggle", on = false, interval = 45,
     name = "รับรางวัลสมุดสะสมให้เอง",
     desc = "ทุกครั้งที่สะสมสัตว์ครบตามเกณฑ์ในสมุด จะกดรับรางวัลทั้งหมดให้พร้อมกัน",
     fn = function()
@@ -860,7 +957,7 @@ add({
 })
 
 add({
-    id = "quest", tab = TAB_FREE, kind = "toggle", on = false, interval = 40,
+    id = "quest", auto = true, tab = TAB_FREE, kind = "toggle", on = false, interval = 40,
     name = "รับรางวัลเควสต์มือใหม่ให้เอง",
     desc = "เควสต์ช่วงเริ่มเกมที่ทำเสร็จแล้วจะถูกกดรับรางวัลให้ทีละอัน",
     fn = function()
@@ -884,7 +981,7 @@ add({
 })
 
 add({
-    id = "boss", tab = TAB_FREE, kind = "toggle", on = false, interval = 50,
+    id = "boss", auto = true, tab = TAB_FREE, kind = "toggle", on = false, interval = 50,
     name = "รับรางวัลบอสมาสเตอรี่ให้เอง",
     desc = "ฆ่าบอสสะสมแต้มถึงเป้าไหน ก็กดรับรางวัลของเป้านั้นให้ทันที",
     fn = function()
@@ -912,7 +1009,7 @@ add({
 })
 
 add({
-    id = "rally", tab = TAB_FREE, kind = "toggle", on = false, interval = 50,
+    id = "rally", auto = true, tab = TAB_FREE, kind = "toggle", on = false, interval = 50,
     name = "รับรางวัลแข่งรถให้เอง",
     desc = "ชนะการแข่งสะสมถึงเป้าไหน ก็รับรางวัลของเป้านั้นให้ทันที",
     fn = function()
@@ -952,7 +1049,6 @@ add({
     end
 })
 
--- ============ แท็บ 4 : กิจกรรม ============
 local areaNames = {}
 do
     local world = workspace:FindFirstChild("World")
@@ -970,7 +1066,7 @@ end
 settings.area = areaNames[1]
 
 add({
-    id = "prompts", tab = TAB_EVENT, kind = "toggle", on = false, interval = 1.5,
+    id = "prompts", auto = true, tab = TAB_EVENT, kind = "toggle", on = false, interval = 1.5,
     name = "กดปุ่มโต้ตอบรอบตัวให้เอง",
     desc = "กดปุ่มโต้ตอบ (E) ทุกอันที่อยู่ใกล้ตัวในระยะที่เลือก ใช้เก็บของกิจกรรมที่กระจายอยู่ ข้ามปุ่มซื้อของและส่งของขวัญ",
     fn = function()
@@ -1017,8 +1113,8 @@ add({
 })
 
 add({
-    id = "halloweenEggs", tab = TAB_EVENT, kind = "toggle", on = false, interval = 3,
-    name = "เก็บไข่ฮาโลวีนในมิติผี",
+    id = "halloweenEggs", auto = true, tab = TAB_EVENT, kind = "toggle", on = false, interval = 3,
+    name = "บินเก็บไข่ฮาโลวีนออโต้",
     desc = "วิ่งไปเก็บไข่ในมิติฮาโลวีนทีละฟอง แล้วกลับมาวางลงฐาน ใช้ได้เมื่อกิจกรรมฮาโลวีนเปิดอยู่",
     fn = function()
         local list = fieldPrompts({CarryHalloweenEgg = true})
@@ -1027,13 +1123,13 @@ add({
             return
         end
         withMove(function()
-            tp(it.part.CFrame * CFrame.new(0, 3, 0))
+            goTo(it.part.CFrame * CFrame.new(0, 3, 0))
             task.wait(0.35)
             firePrompt(it.prompt)
             task.wait(1.2)
             local plot = myPlot()
             if plot then
-                tp(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
+                goTo(plot.CenterPoint.CFrame * CFrame.new(0, 5, 0))
                 task.wait(0.3)
                 plantAll()
             end
@@ -1136,7 +1232,6 @@ add({
     end
 })
 
--- ============ แท็บ 5 : แอดมิน ============
 local staffOK = nil
 listenRemote("StaffConsole", "StaffVerdict", function(v)
     staffOK = v and true or false
@@ -1328,7 +1423,234 @@ add({
     end
 })
 
--- ============ แท็บ 6 : ตัวละคร ============
+local function infoDump(label, ns, name, ...)
+    local t = ask(ns, name, ...)
+    local v = t[2]
+    if not t[1] then
+        log(label .. ": ไม่ได้ " .. short(v))
+        return
+    end
+    if type(v) == "table" then
+        local s, n = {}, 0
+        for k, x in pairs(v) do
+            n = n + 1
+            if n <= 6 then
+                table.insert(s, tostring(k) .. "=" .. (type(x) == "table" and "{..}" or tostring(x)))
+            end
+        end
+        log(label .. ": " .. table.concat(s, ", "))
+    else
+        log(label .. ": " .. tostring(v) .. " " .. short(t[3]))
+    end
+end
+
+add({
+    id = "liveSched", tab = TAB_EVENT, kind = "button",
+    name = "ดูอีเวนต์ที่กำลังจะมา",
+    desc = "ถามเซิร์ฟเวอร์ว่ามีอีเวนต์อะไรกำหนดไว้ ผลขึ้นในหน้าบันทึก",
+    fn = function()
+        infoDump("อีเวนต์ที่กำหนดไว้", "LiveEvents", "FetchScheduled")
+    end
+})
+add({
+    id = "luckState", tab = TAB_EVENT, kind = "button",
+    name = "ดูสถานะโชคของเซิร์ฟเวอร์",
+    desc = "ถามว่าตอนนี้เซิร์ฟเวอร์มีโบนัสโชคเปิดอยู่ไหม",
+    fn = function()
+        infoDump("โชคเซิร์ฟเวอร์", "LuckWindow", "FetchState")
+    end
+})
+add({
+    id = "homeState", tab = TAB_EVENT, kind = "button",
+    name = "ดูข้อมูลฐานของเรา",
+    desc = "ดูสถานะฐานจากเซิร์ฟเวอร์ ผลขึ้นในหน้าบันทึก",
+    fn = function()
+        infoDump("ฐาน", "Homestead", "AskState")
+    end
+})
+add({
+    id = "wearLimit", tab = TAB_EVENT, kind = "button",
+    name = "ดูจำนวนสัตว์ที่ใส่ได้สูงสุด",
+    desc = "ถามว่าฐานของเราใส่สัตว์ได้กี่ตัว",
+    fn = function()
+        infoDump("จำนวนที่ใส่ได้", "PenRoster", "AskWearLimit")
+    end
+})
+add({
+    id = "autoSellState", tab = TAB_EVENT, kind = "button",
+    name = "ดูการตั้งขายอัตโนมัติของเกม",
+    desc = "ดูว่าเกมตั้งขายอัตโนมัติไว้ระดับไหน ผลขึ้นในหน้าบันทึก",
+    fn = function()
+        infoDump("ขายอัตโนมัติของเกม", "Haul", "FetchAutoSell")
+    end
+})
+add({
+    id = "enterBoss", tab = TAB_EVENT, kind = "button",
+    name = "เข้าห้องบอส",
+    desc = "ขอเข้าสู้บอสเมื่อบอสเกิดอยู่",
+    fn = function()
+        infoDump("เข้าบอส", "BossEvent", "AskEnter")
+    end
+})
+add({
+    id = "enterHollow", tab = TAB_EVENT, kind = "button",
+    name = "เข้าสนามแข่ง The Hollow",
+    desc = "ขอเข้าสนามแข่งของกิจกรรมฮาโลวีน เมื่อเปิดอยู่",
+    fn = function()
+        infoDump("The Hollow", "TheHollow", "AskEnter")
+    end
+})
+add({
+    id = "dismount", tab = TAB_EVENT, kind = "button",
+    name = "ลงจากสัตว์ที่ขี่อยู่",
+    desc = "ลงจากสัตว์เลี้ยงที่กำลังขี่",
+    fn = function()
+        infoDump("ลงจากสัตว์", "PetMount", "Request", "dismount")
+    end
+})
+add({
+    id = "trailOff", tab = TAB_EVENT, kind = "button",
+    name = "ถอดเทรลที่ใส่อยู่",
+    desc = "ถอดเทรลที่ตัวละครใส่อยู่ออก",
+    fn = function()
+        infoDump("ถอดเทรล", "Trailwear", "AskDoff")
+    end
+})
+add({
+    id = "rallyOpen", tab = TAB_EVENT, kind = "button",
+    name = "ดูข้อมูลซัมเมอร์ ซีซั่นแบนเนอร์",
+    desc = "ถามสถานะแบนเนอร์ซีซั่นปัจจุบัน",
+    fn = function()
+        infoDump("ซีซั่น", "SeasonBanner", "FetchState")
+    end
+})
+
+local espName = "TreadESP"
+add({
+    id = "espEgg", tab = TAB_EVENT, kind = "toggle", on = false, interval = 3,
+    name = "ไฮไลต์ไข่ในสนาม",
+    desc = "ขึ้นเส้นขอบเรืองแสงรอบไข่ที่อยู่ในสนามทุกฟอง มองเห็นได้ไกลและทะลุกำแพง",
+    fn = function()
+        for _, it in ipairs(fieldPrompts({CarryAreaEgg = true, CarryHalloweenEgg = true})) do
+            if not it.part:FindFirstChild(espName) then
+                local h = Instance.new("Highlight")
+                h.Name = espName
+                h.FillColor = Color3.fromRGB(255, 200, 60)
+                h.OutlineColor = Color3.new(1, 1, 1)
+                h.FillTransparency = 0.4
+                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                h.Adornee = it.part
+                h.Parent = it.part
+            end
+        end
+    end,
+    onChange = function(v)
+        if not v then
+            for _, c in ipairs(workspace:GetChildren()) do
+                local x = c:FindFirstChild(espName)
+                if x then
+                    x:Destroy()
+                end
+            end
+        end
+    end
+})
+
+add({
+    id = "espPlayers", tab = TAB_CHAR, kind = "toggle", on = false, interval = 3,
+    name = "ไฮไลต์ผู้เล่นคนอื่น",
+    desc = "ขึ้นเส้นขอบรอบตัวผู้เล่นทุกคนในเซิร์ฟเวอร์ ดูได้ว่าใครอยู่ตรงไหน",
+    fn = function()
+        for _, pl in ipairs(Players:GetPlayers()) do
+            local c = pl ~= lp and pl.Character
+            if c and not c:FindFirstChild(espName) then
+                local h = Instance.new("Highlight")
+                h.Name = espName
+                h.FillTransparency = 0.6
+                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                h.Adornee = c
+                h.Parent = c
+            end
+        end
+    end,
+    onChange = function(v)
+        if not v then
+            for _, pl in ipairs(Players:GetPlayers()) do
+                local x = pl.Character and pl.Character:FindFirstChild(espName)
+                if x then
+                    x:Destroy()
+                end
+            end
+        end
+    end
+})
+
+add({
+    id = "lowGfx", tab = TAB_CHAR, kind = "toggle", on = false,
+    name = "ลดกราฟิกให้ลื่น",
+    desc = "ปิดเงา เอฟเฟกต์แสง และลดคุณภาพภาพ ทำให้เกมลื่นขึ้นเวลาเปิดออโต้ทิ้งไว้นาน",
+    onChange = function(v)
+        if v then
+            pcall(function()
+                UserSettings():GetService("UserGameSettings").SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+            end)
+            Lighting.GlobalShadows = false
+            for _, e in ipairs(Lighting:GetChildren()) do
+                if e:IsA("PostEffect") or e:IsA("BlurEffect") or e:IsA("SunRaysEffect") or e:IsA("BloomEffect") then
+                    e.Enabled = false
+                end
+            end
+        end
+    end
+})
+
+add({
+    id = "noVideo", tab = TAB_CHAR, kind = "toggle", on = false, interval = 4,
+    name = "ปิดวิดีโอบนจอลู่วิ่ง",
+    desc = "ปิดจอวิดีโอที่ฉายบนลู่วิ่ง ช่วยลดภาระเครื่องตอนยืนลู่ทิ้งไว้",
+    fn = function()
+        for _, g in ipairs(pg:GetChildren()) do
+            if g:IsA("SurfaceGui") and g.Name:find("TreadmillVideo") then
+                g.Enabled = false
+            end
+        end
+    end
+})
+
+add({
+    id = "mute", tab = TAB_CHAR, kind = "toggle", on = false,
+    name = "ปิดเสียงเกม",
+    desc = "ปิดเสียงทั้งหมดของเกม",
+    onChange = function(v)
+        pcall(function()
+            game:GetService("SoundService").Volume = v and 0 or 0.5
+        end)
+    end
+})
+
+add({
+    id = "rejoin", tab = TAB_CHAR, kind = "button",
+    name = "เข้าเซิร์ฟเวอร์ใหม่",
+    desc = "ออกแล้วเข้าเกมนี้อีกครั้ง ใช้เมื่อเซิร์ฟเวอร์ค้างหรือหาไข่ไม่เจอ",
+    fn = function()
+        pcall(function()
+            game:GetService("TeleportService"):Teleport(game.PlaceId, lp)
+        end)
+    end
+})
+add({
+    id = "copyPos", tab = TAB_CHAR, kind = "button",
+    name = "บันทึกพิกัดตัวละครลงบันทึก",
+    desc = "แสดงพิกัดที่ยืนอยู่ในหน้าบันทึก",
+    fn = function()
+        local h = hrp()
+        if h then
+            local p = h.Position
+            log(string.format("พิกัด %.1f, %.1f, %.1f", p.X, p.Y, p.Z))
+        end
+    end
+})
+
 local conns = {}
 local function track(c)
     table.insert(conns, c)
@@ -1336,7 +1658,7 @@ local function track(c)
 end
 
 add({
-    id = "afk", tab = TAB_CHAR, kind = "toggle", on = false, interval = 25,
+    id = "afk", auto = true, tab = TAB_CHAR, kind = "toggle", on = false, interval = 25,
     name = "กันหลุดเกมตอนไม่ได้ขยับ",
     desc = "ส่งสัญญาณว่ายังอยู่ในเกมทุกช่วง ไม่ให้ถูกเตะออกเพราะไม่ได้ทำอะไรนาน",
     fn = function()
@@ -1500,7 +1822,6 @@ add({
         end
     end
 })
--- ============ หน้าตา ============
 local T = {
     window = Color3.fromRGB(26, 26, 28),
     panel = Color3.fromRGB(33, 33, 36),
@@ -1575,7 +1896,6 @@ local camConn = workspace.CurrentCamera and workspace.CurrentCamera:GetPropertyC
     end
 end)
 
--- แถบชื่อ
 local titleBar = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Active = true}, window)
 make("Frame", {Position = UDim2.new(0, 0, 1, -1), Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = T.line, BorderSizePixel = 0}, titleBar)
 
@@ -1602,7 +1922,6 @@ local pillText = label(pill, {Position = UDim2.fromOffset(24, 0), Size = UDim2.n
 
 local body = make("Frame", {Position = UDim2.fromOffset(0, 41), Size = UDim2.new(1, 0, 1, -41), BackgroundTransparency = 1}, window)
 
--- ฝั่งซ้าย (หมวด)
 local left = make("Frame", {Size = UDim2.fromOffset(170, 329), BackgroundTransparency = 1}, body)
 make("Frame", {Position = UDim2.fromOffset(170, 10), Size = UDim2.fromOffset(1, 309), BackgroundColor3 = T.line, BorderSizePixel = 0}, body)
 label(left, {Position = UDim2.fromOffset(16, 10), Size = UDim2.fromOffset(140, 16), Text = "หมวดฟังก์ชัน", Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = T.muted})
@@ -1618,7 +1937,6 @@ local statCash = label(left, {Position = UDim2.fromOffset(16, 274), Size = UDim2
 local statReb = label(left, {Position = UDim2.fromOffset(16, 291), Size = UDim2.fromOffset(145, 16), Text = "ความเร็ว  -", Font = Enum.Font.Code, TextSize = 12, TextColor3 = T.muted})
 local statRod = label(left, {Position = UDim2.fromOffset(16, 308), Size = UDim2.fromOffset(145, 16), Text = "ลู่วิ่ง  -", Font = Enum.Font.Code, TextSize = 12, TextColor3 = T.muted, TextTruncate = Enum.TextTruncate.AtEnd})
 
--- ฝั่งขวา (รายการ)
 local right = make("Frame", {Position = UDim2.fromOffset(171, 0), Size = UDim2.fromOffset(509, 329), BackgroundTransparency = 1}, body)
 local headLabel = label(right, {Position = UDim2.fromOffset(16, 6), Size = UDim2.fromOffset(300, 24), Text = "", Font = Enum.Font.GothamBold, TextSize = 14})
 local headCount = label(right, {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 6), Size = UDim2.fromOffset(160, 24), Text = "", Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.muted, TextXAlignment = Enum.TextXAlignment.Right})
@@ -1632,7 +1950,6 @@ make("UIPadding", {PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6)
 
 local logLabel = nil
 
--- แถบล่าง
 local composer = make("Frame", {Position = UDim2.fromOffset(10, 331), Size = UDim2.fromOffset(W - 20, 58), BackgroundColor3 = T.panel, BorderSizePixel = 0}, body)
 rounded(composer, 12)
 outlined(composer)
@@ -1664,7 +1981,6 @@ logHook = function(text)
     end
 end
 
--- แถวฟังก์ชัน
 local rowsByTab = {}
 for i = 1, #TABS do
     rowsByTab[i] = {}
@@ -1786,7 +2102,6 @@ for _, def in ipairs(features) do
     table.insert(rowsByTab[def.tab], def)
 end
 
--- หน้าบันทึก
 local logRow = make("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = T.panel2, BorderSizePixel = 0, Visible = false}, scroller)
 rounded(logRow, 10)
 logLabel = label(logRow, {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Text = "ยังไม่มีอะไร", TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.muted})
@@ -1826,14 +2141,8 @@ for i, name in ipairs(TABS) do
     tabButtons[i] = b
 end
 
--- ปุ่มควบคุม
 allOnChip.Activated:Connect(function()
-    for _, d in ipairs(features) do
-        if d.kind == "toggle" and d.tab <= 4 and d.setOn then
-            d.setOn(true, true)
-        end
-    end
-    log("เปิดออโต้ทั้งหมดแล้ว")
+    byId.master.setOn(true)
 end)
 allOffChip.Activated:Connect(function()
     for _, d in ipairs(features) do
@@ -1852,7 +2161,6 @@ runBtn.Activated:Connect(function()
     log("สั่งรันรอบใหม่ให้ทุกตัวที่เปิดอยู่")
 end)
 
--- เปิดปิดเมนู
 local menuOpen = true
 local function setMenu(v)
     menuOpen = v
@@ -1883,7 +2191,6 @@ homeDot.Activated:Connect(function()
     scale.Scale = openScale
 end)
 
--- แถบกดข้างล่างสุดตรงกลางจอ
 local barHit = make("TextButton", {
     Name = "ToggleBar", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -2), Size = UDim2.fromOffset(170, 26),
     BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 50
@@ -1904,7 +2211,6 @@ local keyConn = UIS.InputBegan:Connect(function(input, processed)
     end
 end)
 
--- ลากหน้าต่าง
 local dragging, dragStart, startPos = false, nil, nil
 titleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1938,7 +2244,6 @@ gui.Destroying:Connect(function()
     env.__TreadMenuToken = (env.__TreadMenuToken or 0) + 1
 end)
 
--- ============ ลูปหลัก ============
 for _, def in ipairs(features) do
     if def.kind == "toggle" and def.on and def.onChange then
         task.spawn(function()
@@ -1951,7 +2256,7 @@ task.spawn(function()
     while alive() and gui.Parent do
         local now = os.clock()
         for _, def in ipairs(features) do
-            if def.kind == "toggle" and def.on and def.fn and now >= def.next then
+            if def.kind == "toggle" and (def.on or (def.auto and byId.master and byId.master.on)) and def.fn and now >= def.next then
                 def.next = now + (def.interval or 3)
                 runFeature(def)
             end
